@@ -33,4 +33,6 @@ ipykernel = "^6.30.0"
 [tool.poetry.group.test.dependencies]
 pytest = "^8.4.1"
 requests-mock = "^1.12.1"
+pytest-cov = "^6.0.0"
+pytest-mock = "^3.12.0"
 
