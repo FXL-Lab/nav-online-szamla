@@ -1,0 +1,36 @@
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+name = "nav-online-szamla"
+version = "0.0.1"
+description = "NAV Online Számla"
+authors = ["Gergo Emmert <gergo.emmert@fxltech.com>"]
+package-mode = true
+packages = [{include = "nav_online_szamla"}]
+
+[tool.poetry.dependencies]
+python = "^3.13.1"
+requests = "^2.31.0"
+flask = "^3.1.0"
+azure-functions = "^1.23.0"
+pysimplesoap = "^1.16.0"
+pandas = "^2.1.0"
+openpyxl = "^3.1.0"
+mnb = "^1.0.1"
+azure-identity = "^1.23.0"
+pyodbc = "^5.2.0"
+dotenv = "^0.9.9"
+flask-sqlalchemy = "^3.1.1"
+flask-login = "^0.6.3"
+tenacity = "^9.0.0"
+
+[tool.poetry.group.dev.dependencies]
+ipykernel = "^6.30.0"
+
+
+[tool.poetry.group.test.dependencies]
+pytest = "^8.4.1"
+requests-mock = "^1.12.1"
+
