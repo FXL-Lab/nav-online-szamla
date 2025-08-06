@@ -700,15 +700,21 @@ class NavOnlineInvoiceClient:
             # Parse invoice digests
             invoice_digests = []
             invoice_elements = dom.getElementsByTagName('invoiceDigest')
+            # Also check for namespaced elements
+            if not invoice_elements:
+                invoice_elements = dom.getElementsByTagName('ns2:invoiceDigest')
+            
+            logger.debug(f"Found {len(invoice_elements)} invoice digest elements")
             
             for invoice_elem in invoice_elements:
                 try:
                     # Extract basic invoice information
                     invoice_number = get_xml_element_value(invoice_elem, 'invoiceNumber', '')
                     
-                    # Parse direction
-                    direction_str = get_xml_element_value(invoice_elem, 'invoiceDirection', 'OUTBOUND')
-                    invoice_direction = InvoiceDirection(direction_str)
+                    # The digest response doesn't contain invoiceDirection directly
+                    # For now, assume OUTBOUND since we queried for OUTBOUND invoices
+                    # This could be improved by looking at the supplier tax number vs our tax number
+                    invoice_direction = InvoiceDirection.OUTBOUND
                     
                     # Parse dates
                     ins_date_str = get_xml_element_value(invoice_elem, 'insDate', '')
@@ -723,6 +729,8 @@ class NavOnlineInvoiceClient:
                     customer_tax_number = get_xml_element_value(invoice_elem, 'customerTaxNumber', '')
                     completeness_indicator = get_xml_element_value(invoice_elem, 'completenessIndicator', 'false') == 'true'
                     original_request_version = get_xml_element_value(invoice_elem, 'originalRequestVersion', '3.0')
+                    
+                    logger.debug(f"Parsed invoice digest: {invoice_number}, operation: {invoice_operation}, supplier: {supplier_tax_number}")
                     
                     digest = InvoiceDigestType(
                         invoice_number=invoice_number,
@@ -748,6 +756,10 @@ class NavOnlineInvoiceClient:
             available_count = None
             
             digest_result = dom.getElementsByTagName('invoiceDigestResult')
+            # Also check for namespaced elements
+            if not digest_result:
+                digest_result = dom.getElementsByTagName('ns2:invoiceDigestResult')
+            
             if digest_result:
                 current_page_str = get_xml_element_value(digest_result[0], 'currentPage', '')
                 available_page_str = get_xml_element_value(digest_result[0], 'availablePage', '')
@@ -756,6 +768,10 @@ class NavOnlineInvoiceClient:
                 current_page = int(current_page_str) if current_page_str else None
                 available_page = int(available_page_str) if available_page_str else None
                 available_count = int(available_count_str) if available_count_str else None
+                
+                logger.debug(f"Pagination: current_page={current_page}, available_page={available_page}, available_count={available_count}")
+            else:
+                logger.warning("No invoiceDigestResult element found in response")
             
             return QueryInvoiceDigestResponseType(
                 header=header,
@@ -1020,11 +1036,14 @@ class NavOnlineInvoiceClient:
             
             # Build XML request
             xml_request = self._build_query_invoice_digest_request_xml(credentials, request)
+            logger.debug(f"Sending QueryInvoiceDigest XML request: {xml_request}")
             
             # Make API call
             with self.http_client as client:
                 response = client.post("/queryInvoiceDigest", xml_request)
                 xml_response = response.text
+            
+            logger.debug(f"Received QueryInvoiceDigest XML response: {xml_response}")
             
             # Parse response
             return self._parse_api_compliant_invoice_digest_response(xml_response)

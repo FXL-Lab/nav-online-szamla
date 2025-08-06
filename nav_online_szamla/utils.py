@@ -169,7 +169,7 @@ def get_xml_element_value(xml_doc: xml.dom.minidom.Document, tag_name: str, defa
     Get text content of an XML element.
     
     Args:
-        xml_doc: XML document
+        xml_doc: XML document or element
         tag_name: Tag name to search for
         default_value: Default value if element not found
         
@@ -177,9 +177,18 @@ def get_xml_element_value(xml_doc: xml.dom.minidom.Document, tag_name: str, defa
         str: Element text content or default value
     """
     try:
+        # First try the exact tag name
         elements = xml_doc.getElementsByTagName(tag_name)
         if elements and elements[0].firstChild:
             return elements[0].firstChild.data.strip()
+        
+        # If not found, try with common namespace prefixes
+        for prefix in ['ns2:', 'ns3:', 'ns4:', 'common:']:
+            namespaced_tag = f"{prefix}{tag_name}"
+            elements = xml_doc.getElementsByTagName(namespaced_tag)
+            if elements and elements[0].firstChild:
+                return elements[0].firstChild.data.strip()
+        
         return default_value
     except Exception:
         return default_value
