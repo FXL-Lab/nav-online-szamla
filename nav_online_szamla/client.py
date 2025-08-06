@@ -15,7 +15,7 @@ from .config import (
 )
 from .models import (
     NavCredentials, InvoiceDirection, InvoiceDigest, InvoiceDetail,
-    ApiResponse, ErrorInfo,
+    ApiResponse, ErrorInfo, TaxNumber, SupplierInfo, CustomerInfo,
     QueryInvoiceDigestRequest, QueryInvoiceCheckRequest, QueryInvoiceDataRequest,
     QueryInvoiceChainDigestRequest, MandatoryQueryParams, AdditionalQueryParams,
     RelationalQueryParams, TransactionQueryParams, InvoiceQueryParams,
@@ -221,10 +221,12 @@ class NavOnlineInvoiceClient:
         <softwareDevCountryCode>{SOFTWARE_DEV_COUNTRY}</softwareDevCountryCode>
         <softwareDevTaxNumber>{credentials.tax_number}</softwareDevTaxNumber>
     </software>
-    <invoiceNumber>{invoice_number}</invoiceNumber>
-    <invoiceDirection>{invoice_direction.value}</invoiceDirection>
-    {batch_index_filter}
-    {supplier_tax_filter}
+    <invoiceNumberQuery>
+        <invoiceNumber>{invoice_number}</invoiceNumber>
+        <invoiceDirection>{invoice_direction.value}</invoiceDirection>
+        {supplier_tax_filter}
+        {batch_index_filter}
+    </invoiceNumberQuery>
 </QueryInvoiceDataRequest>"""
 
     def _build_query_invoice_digest_request_xml(self, credentials: NavCredentials, 
@@ -434,10 +436,12 @@ class NavOnlineInvoiceClient:
         <softwareDevCountryCode>{SOFTWARE_DEV_COUNTRY}</softwareDevCountryCode>
         <softwareDevTaxNumber>{credentials.tax_number}</softwareDevTaxNumber>
     </software>
-    <invoiceNumber>{request.invoice_number}</invoiceNumber>
-    <invoiceDirection>{request.invoice_direction.value}</invoiceDirection>
-    {batch_index_filter}
-    {supplier_tax_filter}
+    <invoiceNumberQuery>
+        <invoiceNumber>{request.invoice_number}</invoiceNumber>
+        <invoiceDirection>{request.invoice_direction.value}</invoiceDirection>
+        {supplier_tax_filter}
+        {batch_index_filter}
+    </invoiceNumberQuery>
 </QueryInvoiceCheckRequest>"""
 
     def _build_query_invoice_data_request_xml(self, credentials: NavCredentials, 
@@ -480,10 +484,12 @@ class NavOnlineInvoiceClient:
         <softwareDevCountryCode>{SOFTWARE_DEV_COUNTRY}</softwareDevCountryCode>
         <softwareDevTaxNumber>{credentials.tax_number}</softwareDevTaxNumber>
     </software>
-    <invoiceNumber>{request.invoice_number}</invoiceNumber>
-    <invoiceDirection>{request.invoice_direction.value}</invoiceDirection>
-    {batch_index_filter}
-    {supplier_tax_filter}
+    <invoiceNumberQuery>
+        <invoiceNumber>{request.invoice_number}</invoiceNumber>
+        <invoiceDirection>{request.invoice_direction.value}</invoiceDirection>
+        {supplier_tax_filter}
+        {batch_index_filter}
+    </invoiceNumberQuery>
 </QueryInvoiceDataRequest>"""
 
     def _build_query_invoice_chain_digest_request_xml(self, credentials: NavCredentials, 
@@ -819,6 +825,8 @@ class NavOnlineInvoiceClient:
             InvoiceDetail: Parsed invoice detail
         """
         try:
+            import base64
+            
             dom = parse_xml_safely(xml_response)
             
             # Check for errors first
@@ -829,24 +837,155 @@ class NavOnlineInvoiceClient:
                     raise NavInvoiceNotFoundException(f"Invoice not found: {error_info.message}")
                 raise NavApiException(f"NAV API Error: {error_info.error_code} - {error_info.message}")
             
-            # TODO: Implement detailed invoice parsing based on the mapping in nav_constans.py
-            # For now, return a basic structure
-            invoice_number = get_xml_element_value(dom, 'invoiceNumber', '')
+            # Extract the base64 encoded invoice data
+            invoice_data_elements = dom.getElementsByTagName('invoiceData')
+            if not invoice_data_elements:
+                raise NavXmlParsingException("No invoice data found in response")
             
-            # This is a simplified implementation - should be expanded based on requirements
+            # Decode the base64 invoice data
+            encoded_invoice_data = invoice_data_elements[0].firstChild.nodeValue
+            if not encoded_invoice_data:
+                raise NavXmlParsingException("Empty invoice data in response")
+            
+            # Decode from base64
+            decoded_invoice_xml = base64.b64decode(encoded_invoice_data).decode('utf-8')
+            logger.debug(f"Decoded invoice XML: {decoded_invoice_xml}")
+            
+            # Parse the decoded invoice XML
+            invoice_dom = parse_xml_safely(decoded_invoice_xml)
+            
+            # Extract basic invoice information
+            invoice_number = get_xml_element_value(invoice_dom, 'invoiceNumber', '')
+            
+            # Parse issue date
+            issue_date_str = get_xml_element_value(invoice_dom, 'invoiceIssueDate', '')
+            issue_date = datetime.now()
+            if issue_date_str:
+                try:
+                    issue_date = datetime.strptime(issue_date_str, '%Y-%m-%d')
+                except ValueError:
+                    logger.warning(f"Could not parse issue date: {issue_date_str}")
+            
+            # Parse completion date (if available)
+            completion_date = None
+            completion_date_str = get_xml_element_value(invoice_dom, 'completionDate', '')
+            if completion_date_str:
+                try:
+                    completion_date = datetime.strptime(completion_date_str, '%Y-%m-%d')
+                except ValueError:
+                    logger.warning(f"Could not parse completion date: {completion_date_str}")
+            
+            # Parse currency and exchange rate
+            currency_code = get_xml_element_value(invoice_dom, 'currencyCode', 'HUF')
+            exchange_rate_str = get_xml_element_value(invoice_dom, 'exchangeRate', '')
+            exchange_rate = None
+            if exchange_rate_str:
+                try:
+                    exchange_rate = float(exchange_rate_str)
+                except ValueError:
+                    logger.warning(f"Could not parse exchange rate: {exchange_rate_str}")
+            
+            # Parse supplier information
+            supplier_info = None
+            supplier_elements = invoice_dom.getElementsByTagName('supplierInfo')
+            if supplier_elements:
+                supplier_elem = supplier_elements[0]
+                supplier_name = get_xml_element_value(supplier_elem, 'supplierName', '')
+                
+                # Parse supplier tax number
+                supplier_tax_number = None
+                tax_num_elements = supplier_elem.getElementsByTagName('supplierTaxNumber')
+                if tax_num_elements:
+                    taxpayer_id = get_xml_element_value(tax_num_elements[0], 'taxpayerId', '')
+                    vat_code = get_xml_element_value(tax_num_elements[0], 'vatCode', '')
+                    county_code = get_xml_element_value(tax_num_elements[0], 'countyCode', '')
+                    if taxpayer_id:
+                        supplier_tax_number = TaxNumber(
+                            taxpayer_id=taxpayer_id,
+                            vat_code=vat_code,
+                            county_code=county_code
+                        )
+                
+                if supplier_name or supplier_tax_number:
+                    supplier_info = SupplierInfo(
+                        name=supplier_name,
+                        tax_number=supplier_tax_number,
+                        address=None  # TODO: Parse address if needed
+                    )
+            
+            # Parse customer information
+            customer_info = None
+            customer_elements = invoice_dom.getElementsByTagName('customerInfo')
+            if customer_elements:
+                customer_elem = customer_elements[0]
+                customer_name = get_xml_element_value(customer_elem, 'customerName', '')
+                
+                # Parse customer tax number
+                customer_tax_number = None
+                cust_vat_data = customer_elem.getElementsByTagName('customerVatData')
+                if cust_vat_data:
+                    tax_num_elements = cust_vat_data[0].getElementsByTagName('customerTaxNumber')
+                    if tax_num_elements:
+                        taxpayer_id = get_xml_element_value(tax_num_elements[0], 'taxpayerId', '')
+                        vat_code = get_xml_element_value(tax_num_elements[0], 'vatCode', '')
+                        county_code = get_xml_element_value(tax_num_elements[0], 'countyCode', '')
+                        if taxpayer_id:
+                            customer_tax_number = TaxNumber(
+                                taxpayer_id=taxpayer_id,
+                                vat_code=vat_code,
+                                county_code=county_code
+                            )
+                
+                if customer_name or customer_tax_number:
+                    customer_info = CustomerInfo(
+                        name=customer_name,
+                        tax_number=customer_tax_number,
+                        address=None  # TODO: Parse address if needed
+                    )
+            
+            # Parse invoice amounts from summary
+            invoice_net_amount = 0.0
+            invoice_vat_amount = 0.0
+            invoice_gross_amount = 0.0
+            
+            summary_elements = invoice_dom.getElementsByTagName('invoiceSummary')
+            if summary_elements:
+                summary_elem = summary_elements[0]
+                # Try to get from summaryNormal first
+                normal_summary = summary_elem.getElementsByTagName('summaryNormal')
+                if normal_summary:
+                    net_amount_str = get_xml_element_value(normal_summary[0], 'invoiceNetAmount', '0')
+                    vat_amount_str = get_xml_element_value(normal_summary[0], 'invoiceVatAmount', '0')
+                    
+                    try:
+                        invoice_net_amount = float(net_amount_str)
+                        invoice_vat_amount = float(vat_amount_str)
+                    except ValueError:
+                        logger.warning(f"Could not parse invoice amounts: net={net_amount_str}, vat={vat_amount_str}")
+                
+                # Get gross amount from summaryGrossData
+                gross_summary = summary_elem.getElementsByTagName('summaryGrossData')
+                if gross_summary:
+                    gross_amount_str = get_xml_element_value(gross_summary[0], 'invoiceGrossAmount', '0')
+                    try:
+                        invoice_gross_amount = float(gross_amount_str)
+                    except ValueError:
+                        logger.warning(f"Could not parse gross amount: {gross_amount_str}")
+            
+            # Create the invoice detail object
             detail = InvoiceDetail(
                 invoice_number=invoice_number,
-                issue_date=datetime.now(),  # TODO: Parse from XML
-                completion_date=None,  # TODO: Parse from XML
-                currency_code='HUF',  # TODO: Parse from XML
-                exchange_rate=None,  # TODO: Parse from XML
-                supplier_info=None,  # TODO: Parse from XML
-                customer_info=None,  # TODO: Parse from XML
-                invoice_net_amount=0.0,  # TODO: Parse from XML
-                invoice_vat_amount=0.0,  # TODO: Parse from XML
-                invoice_gross_amount=0.0,  # TODO: Parse from XML
-                source='UNKNOWN',  # TODO: Parse from XML
-                additional_data={}  # TODO: Parse additional fields
+                issue_date=issue_date,
+                completion_date=completion_date,
+                currency_code=currency_code,
+                exchange_rate=exchange_rate,
+                supplier_info=supplier_info,
+                customer_info=customer_info,
+                invoice_net_amount=invoice_net_amount,
+                invoice_vat_amount=invoice_vat_amount,
+                invoice_gross_amount=invoice_gross_amount,
+                source='NAV_API',
+                additional_data={'raw_xml': decoded_invoice_xml}  # Store the raw XML for reference
             )
             
             return detail
@@ -854,6 +993,7 @@ class NavOnlineInvoiceClient:
         except (NavInvoiceNotFoundException, NavApiException):
             raise
         except Exception as e:
+            logger.error(f"Error parsing invoice detail response: {str(e)}")
             raise NavXmlParsingException(f"Failed to parse invoice detail response: {str(e)}")
 
     # New methods using API-compliant request types
@@ -966,10 +1106,10 @@ class NavOnlineInvoiceClient:
             
             # Make API call
             with self.http_client as client:
-                xml_response = client.post("/queryInvoiceData", xml_request)
+                response = client.post("/queryInvoiceData", xml_request)
             
             # Parse response
-            return self._parse_invoice_detail_response(xml_response)
+            return self._parse_invoice_detail_response(response.text)
             
         except NavInvoiceNotFoundException:
             return None
@@ -1102,14 +1242,20 @@ class NavOnlineInvoiceClient:
                         return all_invoice_details
                     
                     try:
-                        logger.debug(f"Fetching details for invoice: {digest.invoice_number}")
+                        logger.info(f"Fetching details for invoice: {digest.invoice_number}")
                         
                         # Create detailed data request
+                        # For OUTBOUND invoices, don't include supplier_tax_number as it causes API error
+                        # For INBOUND invoices, include supplier_tax_number if available
+                        supplier_tax_for_request = None
+                        if digest.invoice_direction == InvoiceDirection.INBOUND:
+                            supplier_tax_for_request = digest.supplier_tax_number
+                        
                         data_request = QueryInvoiceDataRequest(
                             invoice_number=digest.invoice_number,
                             invoice_direction=digest.invoice_direction,
                             batch_index=digest.batch_index,
-                            supplier_tax_number=digest.supplier_tax_number
+                            supplier_tax_number=supplier_tax_for_request
                         )
                         
                         # Get detailed invoice data
@@ -1258,11 +1404,17 @@ class NavOnlineInvoiceClient:
                         return all_invoice_details
                     
                     try:
+                        # For OUTBOUND invoices, don't include supplier_tax_number as it causes API error
+                        # For INBOUND invoices, include supplier_tax_number if available
+                        supplier_tax_for_request = None
+                        if digest.invoice_direction == InvoiceDirection.INBOUND:
+                            supplier_tax_for_request = digest.supplier_tax_number
+                        
                         data_request = QueryInvoiceDataRequest(
                             invoice_number=digest.invoice_number,
                             invoice_direction=digest.invoice_direction,
                             batch_index=digest.batch_index,
-                            supplier_tax_number=digest.supplier_tax_number
+                            supplier_tax_number=supplier_tax_for_request
                         )
                         
                         invoice_detail = self.query_invoice_data(credentials, data_request)
