@@ -267,7 +267,7 @@ def format_timestamp_for_nav(dt: Optional[datetime] = None) -> str:
         dt: Datetime to format, uses current UTC time if None
         
     Returns:
-        str: Formatted timestamp string
+        str: Formatted timestamp string with max 3 decimal places
     """
     if dt is None:
         try:
@@ -278,7 +278,11 @@ def format_timestamp_for_nav(dt: Optional[datetime] = None) -> str:
             # Fallback for older Python versions
             dt = datetime.utcnow()
     
-    return dt.strftime('%Y-%m-%dT%H:%M:%S.%fZ')[:-3] + 'Z'
+    # Format with microseconds and then truncate to 3 decimal places
+    timestamp_str = dt.strftime('%Y-%m-%dT%H:%M:%S.%f')
+    # Keep only first 3 decimal places (microseconds -> milliseconds)
+    timestamp_str = timestamp_str[:-3] + 'Z'
+    return timestamp_str
 
 
 def is_network_error(error_message: str) -> bool:

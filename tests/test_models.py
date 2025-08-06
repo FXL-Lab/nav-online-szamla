@@ -18,7 +18,6 @@ class TestEnums:
         """Test InvoiceDirection enum."""
         assert InvoiceDirection.OUTBOUND.value == "OUTBOUND"
         assert InvoiceDirection.INBOUND.value == "INBOUND"
-        assert InvoiceDirection.BOTH.value == "BOTH"
     
     def test_invoice_operation_enum(self):
         """Test InvoiceOperation enum."""

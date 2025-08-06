@@ -75,7 +75,7 @@ class NavHttpClient:
                 request_headers.update(headers)
             
             logger.debug(f"Making {method} request to {url}")
-            
+            logger.debug(f"data: {data}")
             if method.upper() == 'POST':
                 response = self.session.post(
                     url, 
@@ -131,6 +131,7 @@ class NavHttpClient:
         
         try:
             response = self._make_request('POST', url, headers, data)
+            logger.debug(response.content)
             response.raise_for_status()
             return response
             
@@ -143,7 +144,7 @@ class NavHttpClient:
                 if status_code == 429:
                     raise NavRateLimitException("Rate limit exceeded")
                 else:
-                    raise NavApiException(f"HTTP {status_code}: {str(e)}")
+                    raise NavApiException(f"HTTP {status_code}: {str(e)}, response_data: {str(e.response.content) if e.response else 'No response'}")
             else:
                 raise NavApiException(f"Request failed: {str(e)}")
     

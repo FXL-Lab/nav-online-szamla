@@ -9,7 +9,10 @@ from typing import List, Optional, Dict, Any
 import pandas as pd
 import xml.dom.minidom
 
-from .config import ONLINE_SZAMLA_URL, MAX_DATE_RANGE_DAYS
+from .config import (
+    ONLINE_SZAMLA_URL, MAX_DATE_RANGE_DAYS, SOFTWARE_ID, SOFTWARE_NAME, 
+    SOFTWARE_VERSION, SOFTWARE_DEV_NAME, SOFTWARE_DEV_CONTACT, SOFTWARE_DEV_COUNTRY
+)
 from .models import (
     NavCredentials, InvoiceDirection, InvoiceDigest, InvoiceDetail,
     ApiResponse, ErrorInfo,
@@ -140,27 +143,27 @@ class NavOnlineInvoiceClient:
         request_signature = calculate_request_signature(request_id, timestamp, credentials.signer_key)
         
         return f"""<?xml version="1.0" encoding="UTF-8"?>
-<QueryInvoiceDigestRequest xmlns="http://schemas.nav.gov.hu/OSA/3.0/api" xmlns:base="http://schemas.nav.gov.hu/OSA/3.0/base">
-    <header>
-        <requestId>{request_id}</requestId>
-        <timestamp>{timestamp}</timestamp>
-        <requestVersion>3.0</requestVersion>
-        <headerVersion>1.0</headerVersion>
-    </header>
-    <user>
-        <login>{credentials.login}</login>
-        <passwordHash>{password_hash}</passwordHash>
-        <taxNumber>{credentials.tax_number}</taxNumber>
-        <requestSignature>{request_signature}</requestSignature>
-    </user>
+<QueryInvoiceDigestRequest xmlns="http://schemas.nav.gov.hu/OSA/3.0/api" xmlns:common="http://schemas.nav.gov.hu/NTCA/1.0/common">
+    <common:header>
+        <common:requestId>{request_id}</common:requestId>
+        <common:timestamp>{timestamp}</common:timestamp>
+        <common:requestVersion>3.0</common:requestVersion>
+        <common:headerVersion>1.0</common:headerVersion>
+    </common:header>
+    <common:user>
+        <common:login>{credentials.login}</common:login>
+        <common:passwordHash cryptoType="SHA-512">{password_hash}</common:passwordHash>
+        <common:taxNumber>{credentials.tax_number}</common:taxNumber>
+        <common:requestSignature cryptoType="SHA3-512">{request_signature}</common:requestSignature>
+    </common:user>
     <software>
-        <softwareId>NAV_PYTHON_CLIENT</softwareId>
-        <softwareName>NAV Python Client</softwareName>
+        <softwareId>{SOFTWARE_ID}</softwareId>
+        <softwareName>{SOFTWARE_NAME}</softwareName>
         <softwareOperation>LOCAL_SOFTWARE</softwareOperation>
-        <softwareMainVersion>1.0</softwareMainVersion>
-        <softwareDevName>Python NAV Client</softwareDevName>
-        <softwareDevContact>support@example.com</softwareDevContact>
-        <softwareDevCountryCode>HU</softwareDevCountryCode>
+        <softwareMainVersion>{SOFTWARE_VERSION}</softwareMainVersion>
+        <softwareDevName>{SOFTWARE_DEV_NAME}</softwareDevName>
+        <softwareDevContact>{SOFTWARE_DEV_CONTACT}</softwareDevContact>
+        <softwareDevCountryCode>{SOFTWARE_DEV_COUNTRY}</softwareDevCountryCode>
         <softwareDevTaxNumber>{credentials.tax_number}</softwareDevTaxNumber>
     </software>"""
     
@@ -195,27 +198,27 @@ class NavOnlineInvoiceClient:
             batch_index_filter = f"<batchIndex>{batch_index}</batchIndex>"
         
         return f"""<?xml version="1.0" encoding="UTF-8"?>
-<QueryInvoiceDataRequest xmlns="http://schemas.nav.gov.hu/OSA/3.0/api" xmlns:base="http://schemas.nav.gov.hu/OSA/3.0/base">
-    <header>
-        <requestId>{request_id}</requestId>
-        <timestamp>{timestamp}</timestamp>
-        <requestVersion>3.0</requestVersion>
-        <headerVersion>1.0</headerVersion>
-    </header>
-    <user>
-        <login>{credentials.login}</login>
-        <passwordHash>{password_hash}</passwordHash>
-        <taxNumber>{credentials.tax_number}</taxNumber>
-        <requestSignature>{request_signature}</requestSignature>
-    </user>
+<QueryInvoiceDataRequest xmlns="http://schemas.nav.gov.hu/OSA/3.0/api" xmlns:common="http://schemas.nav.gov.hu/NTCA/1.0/common">
+    <common:header>
+        <common:requestId>{request_id}</common:requestId>
+        <common:timestamp>{timestamp}</common:timestamp>
+        <common:requestVersion>3.0</common:requestVersion>
+        <common:headerVersion>1.0</common:headerVersion>
+    </common:header>
+    <common:user>
+        <common:login>{credentials.login}</common:login>
+        <common:passwordHash cryptoType="SHA-512">{password_hash}</common:passwordHash>
+        <common:taxNumber>{credentials.tax_number}</common:taxNumber>
+        <common:requestSignature cryptoType="SHA3-512">{request_signature}</common:requestSignature>
+    </common:user>
     <software>
-        <softwareId>NAV_PYTHON_CLIENT</softwareId>
-        <softwareName>NAV Python Client</softwareName>
+        <softwareId>{SOFTWARE_ID}</softwareId>
+        <softwareName>{SOFTWARE_NAME}</softwareName>
         <softwareOperation>LOCAL_SOFTWARE</softwareOperation>
-        <softwareMainVersion>1.0</softwareMainVersion>
-        <softwareDevName>Python NAV Client</softwareDevName>
-        <softwareDevContact>support@example.com</softwareDevContact>
-        <softwareDevCountryCode>HU</softwareDevCountryCode>
+        <softwareMainVersion>{SOFTWARE_VERSION}</softwareMainVersion>
+        <softwareDevName>{SOFTWARE_DEV_NAME}</softwareDevName>
+        <softwareDevContact>{SOFTWARE_DEV_CONTACT}</softwareDevContact>
+        <softwareDevCountryCode>{SOFTWARE_DEV_COUNTRY}</softwareDevCountryCode>
         <softwareDevTaxNumber>{credentials.tax_number}</softwareDevTaxNumber>
     </software>
     <invoiceNumber>{invoice_number}</invoiceNumber>
@@ -360,27 +363,27 @@ class NavOnlineInvoiceClient:
         </transactionQueryParams>"""
         
         return f"""<?xml version="1.0" encoding="UTF-8"?>
-<QueryInvoiceDigestRequest xmlns="http://schemas.nav.gov.hu/OSA/3.0/api" xmlns:base="http://schemas.nav.gov.hu/OSA/3.0/base">
-    <header>
-        <requestId>{request_id}</requestId>
-        <timestamp>{timestamp}</timestamp>
-        <requestVersion>3.0</requestVersion>
-        <headerVersion>1.0</headerVersion>
-    </header>
-    <user>
-        <login>{credentials.login}</login>
-        <passwordHash>{password_hash}</passwordHash>
-        <taxNumber>{credentials.tax_number}</taxNumber>
-        <requestSignature>{request_signature}</requestSignature>
-    </user>
+<QueryInvoiceDigestRequest xmlns="http://schemas.nav.gov.hu/OSA/3.0/api" xmlns:common="http://schemas.nav.gov.hu/NTCA/1.0/common">
+    <common:header>
+        <common:requestId>{request_id}</common:requestId>
+        <common:timestamp>{timestamp}</common:timestamp>
+        <common:requestVersion>3.0</common:requestVersion>
+        <common:headerVersion>1.0</common:headerVersion>
+    </common:header>
+    <common:user>
+        <common:login>{credentials.login}</common:login>
+        <common:passwordHash cryptoType="SHA-512">{password_hash}</common:passwordHash>
+        <common:taxNumber>{credentials.tax_number}</common:taxNumber>
+        <common:requestSignature cryptoType="SHA3-512">{request_signature}</common:requestSignature>
+    </common:user>
     <software>
-        <softwareId>NAV_PYTHON_CLIENT</softwareId>
-        <softwareName>NAV Python Client</softwareName>
+        <softwareId>{SOFTWARE_ID}</softwareId>
+        <softwareName>{SOFTWARE_NAME}</softwareName>
         <softwareOperation>LOCAL_SOFTWARE</softwareOperation>
-        <softwareMainVersion>1.0</softwareMainVersion>
-        <softwareDevName>Python NAV Client</softwareDevName>
-        <softwareDevContact>support@example.com</softwareDevContact>
-        <softwareDevCountryCode>HU</softwareDevCountryCode>
+        <softwareMainVersion>{SOFTWARE_VERSION}</softwareMainVersion>
+        <softwareDevName>{SOFTWARE_DEV_NAME}</softwareDevName>
+        <softwareDevContact>{SOFTWARE_DEV_CONTACT}</softwareDevContact>
+        <softwareDevCountryCode>{SOFTWARE_DEV_COUNTRY}</softwareDevCountryCode>
         <softwareDevTaxNumber>{credentials.tax_number}</softwareDevTaxNumber>
     </software>
     <page>{request.page}</page>
@@ -408,27 +411,27 @@ class NavOnlineInvoiceClient:
             supplier_tax_filter = f"<supplierTaxNumber>{request.supplier_tax_number}</supplierTaxNumber>"
         
         return f"""<?xml version="1.0" encoding="UTF-8"?>
-<QueryInvoiceCheckRequest xmlns="http://schemas.nav.gov.hu/OSA/3.0/api" xmlns:base="http://schemas.nav.gov.hu/OSA/3.0/base">
-    <header>
-        <requestId>{request_id}</requestId>
-        <timestamp>{timestamp}</timestamp>
-        <requestVersion>3.0</requestVersion>
-        <headerVersion>1.0</headerVersion>
-    </header>
-    <user>
-        <login>{credentials.login}</login>
-        <passwordHash>{password_hash}</passwordHash>
-        <taxNumber>{credentials.tax_number}</taxNumber>
-        <requestSignature>{request_signature}</requestSignature>
-    </user>
+<QueryInvoiceCheckRequest xmlns="http://schemas.nav.gov.hu/OSA/3.0/api" xmlns:common="http://schemas.nav.gov.hu/NTCA/1.0/common">
+    <common:header>
+        <common:requestId>{request_id}</common:requestId>
+        <common:timestamp>{timestamp}</common:timestamp>
+        <common:requestVersion>3.0</common:requestVersion>
+        <common:headerVersion>1.0</common:headerVersion>
+    </common:header>
+    <common:user>
+        <common:login>{credentials.login}</common:login>
+        <common:passwordHash cryptoType="SHA-512">{password_hash}</common:passwordHash>
+        <common:taxNumber>{credentials.tax_number}</common:taxNumber>
+        <common:requestSignature cryptoType="SHA3-512">{request_signature}</common:requestSignature>
+    </common:user>
     <software>
-        <softwareId>NAV_PYTHON_CLIENT</softwareId>
-        <softwareName>NAV Python Client</softwareName>
+        <softwareId>{SOFTWARE_ID}</softwareId>
+        <softwareName>{SOFTWARE_NAME}</softwareName>
         <softwareOperation>LOCAL_SOFTWARE</softwareOperation>
-        <softwareMainVersion>1.0</softwareMainVersion>
-        <softwareDevName>Python NAV Client</softwareDevName>
-        <softwareDevContact>support@example.com</softwareDevContact>
-        <softwareDevCountryCode>HU</softwareDevCountryCode>
+        <softwareMainVersion>{SOFTWARE_VERSION}</softwareMainVersion>
+        <softwareDevName>{SOFTWARE_DEV_NAME}</softwareDevName>
+        <softwareDevContact>{SOFTWARE_DEV_CONTACT}</softwareDevContact>
+        <softwareDevCountryCode>{SOFTWARE_DEV_COUNTRY}</softwareDevCountryCode>
         <softwareDevTaxNumber>{credentials.tax_number}</softwareDevTaxNumber>
     </software>
     <invoiceNumber>{request.invoice_number}</invoiceNumber>
@@ -454,27 +457,27 @@ class NavOnlineInvoiceClient:
             supplier_tax_filter = f"<supplierTaxNumber>{request.supplier_tax_number}</supplierTaxNumber>"
         
         return f"""<?xml version="1.0" encoding="UTF-8"?>
-<QueryInvoiceDataRequest xmlns="http://schemas.nav.gov.hu/OSA/3.0/api" xmlns:base="http://schemas.nav.gov.hu/OSA/3.0/base">
-    <header>
-        <requestId>{request_id}</requestId>
-        <timestamp>{timestamp}</timestamp>
-        <requestVersion>3.0</requestVersion>
-        <headerVersion>1.0</headerVersion>
-    </header>
-    <user>
-        <login>{credentials.login}</login>
-        <passwordHash>{password_hash}</passwordHash>
-        <taxNumber>{credentials.tax_number}</taxNumber>
-        <requestSignature>{request_signature}</requestSignature>
-    </user>
+<QueryInvoiceDataRequest xmlns="http://schemas.nav.gov.hu/OSA/3.0/api" xmlns:common="http://schemas.nav.gov.hu/NTCA/1.0/common">
+    <common:header>
+        <common:requestId>{request_id}</common:requestId>
+        <common:timestamp>{timestamp}</common:timestamp>
+        <common:requestVersion>3.0</common:requestVersion>
+        <common:headerVersion>1.0</common:headerVersion>
+    </common:header>
+    <common:user>
+        <common:login>{credentials.login}</common:login>
+        <common:passwordHash cryptoType="SHA-512">{password_hash}</common:passwordHash>
+        <common:taxNumber>{credentials.tax_number}</common:taxNumber>
+        <common:requestSignature cryptoType="SHA3-512">{request_signature}</common:requestSignature>
+    </common:user>
     <software>
-        <softwareId>NAV_PYTHON_CLIENT</softwareId>
-        <softwareName>NAV Python Client</softwareName>
+        <softwareId>{SOFTWARE_ID}</softwareId>
+        <softwareName>{SOFTWARE_NAME}</softwareName>
         <softwareOperation>LOCAL_SOFTWARE</softwareOperation>
-        <softwareMainVersion>1.0</softwareMainVersion>
-        <softwareDevName>Python NAV Client</softwareDevName>
-        <softwareDevContact>support@example.com</softwareDevContact>
-        <softwareDevCountryCode>HU</softwareDevCountryCode>
+        <softwareMainVersion>{SOFTWARE_VERSION}</softwareMainVersion>
+        <softwareDevName>{SOFTWARE_DEV_NAME}</softwareDevName>
+        <softwareDevContact>{SOFTWARE_DEV_CONTACT}</softwareDevContact>
+        <softwareDevCountryCode>{SOFTWARE_DEV_COUNTRY}</softwareDevCountryCode>
         <softwareDevTaxNumber>{credentials.tax_number}</softwareDevTaxNumber>
     </software>
     <invoiceNumber>{request.invoice_number}</invoiceNumber>
@@ -496,27 +499,27 @@ class NavOnlineInvoiceClient:
             tax_number_filter = f"<taxNumber>{request.tax_number}</taxNumber>"
         
         return f"""<?xml version="1.0" encoding="UTF-8"?>
-<QueryInvoiceChainDigestRequest xmlns="http://schemas.nav.gov.hu/OSA/3.0/api" xmlns:base="http://schemas.nav.gov.hu/OSA/3.0/base">
-    <header>
-        <requestId>{request_id}</requestId>
-        <timestamp>{timestamp}</timestamp>
-        <requestVersion>3.0</requestVersion>
-        <headerVersion>1.0</headerVersion>
-    </header>
-    <user>
-        <login>{credentials.login}</login>
-        <passwordHash>{password_hash}</passwordHash>
-        <taxNumber>{credentials.tax_number}</taxNumber>
-        <requestSignature>{request_signature}</requestSignature>
-    </user>
+<QueryInvoiceChainDigestRequest xmlns="http://schemas.nav.gov.hu/OSA/3.0/api" xmlns:common="http://schemas.nav.gov.hu/NTCA/1.0/common">
+    <common:header>
+        <common:requestId>{request_id}</common:requestId>
+        <common:timestamp>{timestamp}</common:timestamp>
+        <common:requestVersion>3.0</common:requestVersion>
+        <common:headerVersion>1.0</common:headerVersion>
+    </common:header>
+    <common:user>
+        <common:login>{credentials.login}</common:login>
+        <common:passwordHash cryptoType="SHA-512">{password_hash}</common:passwordHash>
+        <common:taxNumber>{credentials.tax_number}</common:taxNumber>
+        <common:requestSignature cryptoType="SHA3-512">{request_signature}</common:requestSignature>
+    </common:user>
     <software>
-        <softwareId>NAV_PYTHON_CLIENT</softwareId>
-        <softwareName>NAV Python Client</softwareName>
+        <softwareId>{SOFTWARE_ID}</softwareId>
+        <softwareName>{SOFTWARE_NAME}</softwareName>
         <softwareOperation>LOCAL_SOFTWARE</softwareOperation>
-        <softwareMainVersion>1.0</softwareMainVersion>
-        <softwareDevName>Python NAV Client</softwareDevName>
-        <softwareDevContact>support@example.com</softwareDevContact>
-        <softwareDevCountryCode>HU</softwareDevCountryCode>
+        <softwareMainVersion>{SOFTWARE_VERSION}</softwareMainVersion>
+        <softwareDevName>{SOFTWARE_DEV_NAME}</softwareDevName>
+        <softwareDevContact>{SOFTWARE_DEV_CONTACT}</softwareDevContact>
+        <softwareDevCountryCode>{SOFTWARE_DEV_COUNTRY}</softwareDevCountryCode>
         <softwareDevTaxNumber>{credentials.tax_number}</softwareDevTaxNumber>
     </software>
     <page>{request.page}</page>
@@ -1011,6 +1014,283 @@ class NavOnlineInvoiceClient:
         except Exception as e:
             logger.error(f"Unexpected error in query_invoice_chain_digest: {str(e)}")
             raise NavApiException(f"Unexpected error: {str(e)}")
+
+    def get_all_invoice_data_for_date_range(self, credentials: NavCredentials, 
+                                          start_date: datetime, 
+                                          end_date: datetime,
+                                          invoice_direction: InvoiceDirection = InvoiceDirection.OUTBOUND,
+                                          max_invoices: Optional[int] = None) -> List[InvoiceDetail]:
+        """
+        Get all invoice data for a given date range by first querying invoice digests 
+        and then fetching detailed data for each invoice.
+        
+        Args:
+            credentials: NAV API credentials
+            start_date: Start date for the query range
+            end_date: End date for the query range  
+            invoice_direction: Invoice direction to query (default: BOTH)
+            max_invoices: Optional maximum number of invoices to process
+            
+        Returns:
+            List[InvoiceDetail]: List of detailed invoice data
+            
+        Raises:
+            NavValidationException: If parameters are invalid
+            NavApiException: If API requests fail
+        """
+        self.validate_credentials(credentials)
+        
+        if start_date >= end_date:
+            raise NavValidationException("Start date must be before end date")
+            
+        # Validate date range is not too large
+        date_diff = (end_date - start_date).days
+        if date_diff > MAX_DATE_RANGE_DAYS:
+            raise NavValidationException(f"Date range too large. Maximum allowed: {MAX_DATE_RANGE_DAYS} days")
+        
+        all_invoice_details = []
+        processed_count = 0
+        
+        try:
+            logger.info(f"Starting comprehensive invoice data retrieval for date range: {start_date.date()} to {end_date.date()}")
+            
+            # Step 1: Query invoice digests to get all invoices in the date range
+            page = 1
+            total_found = 0
+            
+            while True:
+                logger.info(f"Querying invoice digests - page {page}")
+                
+                # Create date range for the query
+                date_range = DateRange(
+                    date_from=start_date.strftime('%Y-%m-%d'),
+                    date_to=end_date.strftime('%Y-%m-%d')
+                )
+                
+                # Create mandatory query params with date range
+                mandatory_params = MandatoryQueryParams(
+                    invoice_issue_date=date_range
+                )
+                
+                # Create invoice query params
+                invoice_query_params = InvoiceQueryParams(
+                    mandatory_query_params=mandatory_params
+                )
+                
+                # Create the digest request
+                digest_request = QueryInvoiceDigestRequest(
+                    page=page,
+                    invoice_direction=invoice_direction,
+                    invoice_query_params=invoice_query_params
+                )
+                
+                # Query invoice digests
+                digest_response = self.query_invoice_digest(credentials, digest_request)
+                
+                if not digest_response.invoice_digests:
+                    logger.info(f"No more invoices found on page {page}")
+                    break
+                
+                total_found += len(digest_response.invoice_digests)
+                logger.info(f"Found {len(digest_response.invoice_digests)} invoices on page {page} (total so far: {total_found})")
+                
+                # Step 2: Get detailed data for each invoice digest
+                for digest in digest_response.invoice_digests:
+                    # Check if we've reached the maximum invoice limit
+                    if max_invoices and processed_count >= max_invoices:
+                        logger.info(f"Reached maximum invoice limit ({max_invoices}), stopping processing")
+                        return all_invoice_details
+                    
+                    try:
+                        logger.debug(f"Fetching details for invoice: {digest.invoice_number}")
+                        
+                        # Create detailed data request
+                        data_request = QueryInvoiceDataRequest(
+                            invoice_number=digest.invoice_number,
+                            invoice_direction=digest.invoice_direction,
+                            batch_index=digest.batch_index,
+                            supplier_tax_number=digest.supplier_tax_number
+                        )
+                        
+                        # Get detailed invoice data
+                        invoice_detail = self.query_invoice_data(credentials, data_request)
+                        
+                        if invoice_detail:
+                            all_invoice_details.append(invoice_detail)
+                            processed_count += 1
+                            
+                            if processed_count % 10 == 0:
+                                logger.info(f"Processed {processed_count} invoices so far...")
+                        else:
+                            logger.warning(f"No detail data found for invoice: {digest.invoice_number}")
+                            
+                    except NavInvoiceNotFoundException:
+                        logger.warning(f"Invoice details not found for: {digest.invoice_number}")
+                        continue
+                    except Exception as e:
+                        logger.error(f"Error processing invoice {digest.invoice_number}: {str(e)}")
+                        # Continue with next invoice rather than failing completely
+                        continue
+                
+                # Check if there are more pages
+                if digest_response.available_page is None or page >= digest_response.available_page:
+                    logger.info("All pages processed")
+                    break
+                    
+                page += 1
+            
+            logger.info(f"Completed invoice data retrieval. Total processed: {processed_count} invoices")
+            return all_invoice_details
+            
+        except (NavValidationException, NavApiException):
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error in get_all_invoice_data_for_date_range: {str(e)}")
+            raise NavApiException(f"Unexpected error during comprehensive data retrieval: {str(e)}")
+
+    def get_all_invoice_data_for_date_range_with_progress(self, credentials: NavCredentials, 
+                                                        start_date: datetime, 
+                                                        end_date: datetime,
+                                                        invoice_direction: InvoiceDirection = InvoiceDirection.OUTBOUND,
+                                                        max_invoices: Optional[int] = None,
+                                                        progress_callback: Optional[callable] = None) -> List[InvoiceDetail]:
+        """
+        Get all invoice data for a given date range with progress reporting.
+        
+        Args:
+            credentials: NAV API credentials
+            start_date: Start date for the query range
+            end_date: End date for the query range  
+            invoice_direction: Invoice direction to query (default: BOTH)
+            max_invoices: Optional maximum number of invoices to process
+            progress_callback: Optional callback function for progress updates
+                             Called with (current_count, total_estimated, current_invoice_number)
+            
+        Returns:
+            List[InvoiceDetail]: List of detailed invoice data
+            
+        Raises:
+            NavValidationException: If parameters are invalid
+            NavApiException: If API requests fail
+        """
+        self.validate_credentials(credentials)
+        
+        if start_date >= end_date:
+            raise NavValidationException("Start date must be before end date")
+        
+        all_invoice_details = []
+        processed_count = 0
+        total_estimated = 0
+        
+        try:
+            # First pass: count total invoices for progress estimation
+            logger.info("Estimating total invoice count...")
+            page = 1
+            
+            while True:
+                date_range = DateRange(
+                    date_from=start_date.strftime('%Y-%m-%d'),
+                    date_to=end_date.strftime('%Y-%m-%d')
+                )
+                
+                mandatory_params = MandatoryQueryParams(
+                    invoice_issue_date=date_range
+                )
+                
+                invoice_query_params = InvoiceQueryParams(
+                    mandatory_query_params=mandatory_params
+                )
+                
+                digest_request = QueryInvoiceDigestRequest(
+                    page=page,
+                    invoice_direction=invoice_direction,
+                    invoice_query_params=invoice_query_params
+                )
+                
+                digest_response = self.query_invoice_digest(credentials, digest_request)
+                
+                if not digest_response.invoice_digests:
+                    break
+                    
+                total_estimated += len(digest_response.invoice_digests)
+                
+                if digest_response.available_page is None or page >= digest_response.available_page:
+                    break
+                    
+                page += 1
+            
+            logger.info(f"Estimated total invoices: {total_estimated}")
+            
+            # Apply max_invoices limit to estimation
+            if max_invoices:
+                total_estimated = min(total_estimated, max_invoices)
+            
+            # Second pass: actual data retrieval with progress reporting
+            page = 1
+            
+            while True:
+                date_range = DateRange(
+                    date_from=start_date.strftime('%Y-%m-%d'),
+                    date_to=end_date.strftime('%Y-%m-%d')
+                )
+                
+                mandatory_params = MandatoryQueryParams(
+                    invoice_issue_date=date_range
+                )
+                
+                invoice_query_params = InvoiceQueryParams(
+                    mandatory_query_params=mandatory_params
+                )
+                
+                digest_request = QueryInvoiceDigestRequest(
+                    page=page,
+                    invoice_direction=invoice_direction,
+                    invoice_query_params=invoice_query_params
+                )
+                
+                digest_response = self.query_invoice_digest(credentials, digest_request)
+                
+                if not digest_response.invoice_digests:
+                    break
+                
+                for digest in digest_response.invoice_digests:
+                    if max_invoices and processed_count >= max_invoices:
+                        return all_invoice_details
+                    
+                    try:
+                        data_request = QueryInvoiceDataRequest(
+                            invoice_number=digest.invoice_number,
+                            invoice_direction=digest.invoice_direction,
+                            batch_index=digest.batch_index,
+                            supplier_tax_number=digest.supplier_tax_number
+                        )
+                        
+                        invoice_detail = self.query_invoice_data(credentials, data_request)
+                        
+                        if invoice_detail:
+                            all_invoice_details.append(invoice_detail)
+                            processed_count += 1
+                            
+                            # Report progress
+                            if progress_callback:
+                                progress_callback(processed_count, total_estimated, digest.invoice_number)
+                                
+                    except Exception as e:
+                        logger.error(f"Error processing invoice {digest.invoice_number}: {str(e)}")
+                        continue
+                
+                if digest_response.available_page is None or page >= digest_response.available_page:
+                    break
+                    
+                page += 1
+            
+            return all_invoice_details
+            
+        except (NavValidationException, NavApiException):
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error in get_all_invoice_data_for_date_range_with_progress: {str(e)}")
+            raise NavApiException(f"Unexpected error during comprehensive data retrieval: {str(e)}")
 
     def close(self):
         """Close the HTTP client."""

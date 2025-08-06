@@ -13,7 +13,6 @@ class InvoiceDirection(Enum):
     """Invoice direction enumeration."""
     OUTBOUND = "OUTBOUND"  # Kiállító oldali
     INBOUND = "INBOUND"    # Vevő oldali
-    BOTH = "BOTH"          # Mindkét oldal
 
 
 class InvoiceOperation(Enum):

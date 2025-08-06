@@ -82,3 +82,12 @@ INVOICE_OPERATION_MAPPING = {
 # Logging configuration
 LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 LOG_LEVEL = 'INFO'
+
+# Software identification for NAV API
+# Must be exactly 18 characters: [0-9A-Z\-]{18}
+SOFTWARE_ID = "NAVPYTHONCLIENT123"  # 18 characters, uppercase letters and numbers
+SOFTWARE_NAME = "NAV Python Client"
+SOFTWARE_VERSION = "1.0"
+SOFTWARE_DEV_NAME = "Python NAV Client"
+SOFTWARE_DEV_CONTACT = "support@example.com"
+SOFTWARE_DEV_COUNTRY = "HU"
