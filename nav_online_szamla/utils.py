@@ -167,6 +167,7 @@ def split_date_range(start_date: str, end_date: str, max_days: int = MAX_DATE_RA
 def get_xml_element_value(xml_doc: xml.dom.minidom.Document, tag_name: str, default_value: str = "") -> str:
     """
     Get text content of an XML element.
+    Handles namespace inconsistencies by trying multiple namespace prefixes.
     
     Args:
         xml_doc: XML document or element
@@ -177,13 +178,14 @@ def get_xml_element_value(xml_doc: xml.dom.minidom.Document, tag_name: str, defa
         str: Element text content or default value
     """
     try:
-        # First try the exact tag name
+        # First try the exact tag name (no namespace)
         elements = xml_doc.getElementsByTagName(tag_name)
         if elements and elements[0].firstChild:
             return elements[0].firstChild.data.strip()
         
-        # If not found, try with common namespace prefixes
-        for prefix in ['ns2:', 'ns3:', 'ns4:', 'common:']:
+        # If not found, try with common namespace prefixes in order of likelihood
+        # Based on the NAV API response patterns
+        for prefix in ['ns2:', 'ns3:', 'ns4:', 'common:', 'base:']:
             namespaced_tag = f"{prefix}{tag_name}"
             elements = xml_doc.getElementsByTagName(namespaced_tag)
             if elements and elements[0].firstChild:
@@ -192,6 +194,32 @@ def get_xml_element_value(xml_doc: xml.dom.minidom.Document, tag_name: str, defa
         return default_value
     except Exception:
         return default_value
+
+
+def find_xml_elements_with_namespace_aware(xml_doc: xml.dom.minidom.Document, tag_name: str) -> list:
+    """
+    Find XML elements by tag name, trying multiple namespace prefixes.
+    
+    Args:
+        xml_doc: XML document or element
+        tag_name: Tag name to search for
+        
+    Returns:
+        list: List of found elements
+    """
+    # First try the exact tag name (no namespace)
+    elements = xml_doc.getElementsByTagName(tag_name)
+    if elements:
+        return elements
+    
+    # If not found, try with common namespace prefixes
+    for prefix in ['ns2:', 'ns3:', 'ns4:', 'common:', 'base:']:
+        namespaced_tag = f"{prefix}{tag_name}"
+        elements = xml_doc.getElementsByTagName(namespaced_tag)
+        if elements:
+            return elements
+    
+    return []
 
 
 def get_xml_element_float(xml_doc: xml.dom.minidom.Document, tag_name: str, default_value: float = 0.0) -> float:

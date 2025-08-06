@@ -34,7 +34,7 @@ from .utils import (
     generate_password_hash, generate_custom_id, calculate_request_signature,
     validate_date_range, validate_tax_number, split_date_range,
     parse_xml_safely, get_xml_element_value, format_timestamp_for_nav,
-    is_network_error
+    is_network_error, find_xml_elements_with_namespace_aware
 )
 from .http_client import NavHttpClient
 
@@ -548,12 +548,7 @@ class NavOnlineInvoiceClient:
             dom = parse_xml_safely(xml_response)
             
             error_code = get_xml_element_value(dom, 'errorCode', 'UNKNOWN')
-            if not error_code:
-                error_code = get_xml_element_value(dom, 'ns2:errorCode', 'UNKNOWN')
-            
             message = get_xml_element_value(dom, 'message', 'Unknown error')
-            if not message:
-                message = get_xml_element_value(dom, 'ns2:message', 'Unknown error')
             
             return ErrorInfo(
                 error_code=error_code,
@@ -582,13 +577,13 @@ class NavOnlineInvoiceClient:
             dom = parse_xml_safely(xml_response)
             
             # Check for errors first
-            error_elements = dom.getElementsByTagName('errorCode')
+            error_elements = find_xml_elements_with_namespace_aware(dom, 'errorCode')
             if error_elements:
                 error_info = self._parse_error_response(xml_response)
                 raise NavApiException(f"NAV API Error: {error_info.error_code} - {error_info.message}")
             
             invoices = []
-            invoice_elements = dom.getElementsByTagName('invoiceDigest')
+            invoice_elements = find_xml_elements_with_namespace_aware(dom, 'invoiceDigest')
             
             for invoice_elem in invoice_elements:
                 try:
@@ -671,15 +666,16 @@ class NavOnlineInvoiceClient:
             dom = parse_xml_safely(xml_response)
             
             # Check for errors first
-            error_elements = dom.getElementsByTagName('errorCode')
+            error_elements = find_xml_elements_with_namespace_aware(dom, 'errorCode')
             if error_elements:
                 error_info = self._parse_error_response(xml_response)
                 raise NavApiException(f"NAV API Error: {error_info.error_code} - {error_info.message}")
             
             # Parse header
-            header_elem = dom.getElementsByTagName('header')[0] if dom.getElementsByTagName('header') else None
+            header_elements = find_xml_elements_with_namespace_aware(dom, 'header')
             header = None
-            if header_elem:
+            if header_elements:
+                header_elem = header_elements[0]
                 header = BasicHeaderType(
                     request_id=get_xml_element_value(header_elem, 'requestId', ''),
                     timestamp=get_xml_element_value(header_elem, 'timestamp', ''),
@@ -688,9 +684,10 @@ class NavOnlineInvoiceClient:
                 )
             
             # Parse result
-            result_elem = dom.getElementsByTagName('r')[0] if dom.getElementsByTagName('r') else None
+            result_elements = find_xml_elements_with_namespace_aware(dom, 'result')
             result = None
-            if result_elem:
+            if result_elements:
+                result_elem = result_elements[0]
                 result = BasicResultType(
                     func_code=get_xml_element_value(result_elem, 'funcCode', 'ERROR'),
                     error_code=get_xml_element_value(result_elem, 'errorCode', None),
@@ -699,10 +696,7 @@ class NavOnlineInvoiceClient:
             
             # Parse invoice digests
             invoice_digests = []
-            invoice_elements = dom.getElementsByTagName('invoiceDigest')
-            # Also check for namespaced elements
-            if not invoice_elements:
-                invoice_elements = dom.getElementsByTagName('ns2:invoiceDigest')
+            invoice_elements = find_xml_elements_with_namespace_aware(dom, 'invoiceDigest')
             
             logger.debug(f"Found {len(invoice_elements)} invoice digest elements")
             
@@ -755,15 +749,13 @@ class NavOnlineInvoiceClient:
             available_page = None
             available_count = None
             
-            digest_result = dom.getElementsByTagName('invoiceDigestResult')
-            # Also check for namespaced elements
-            if not digest_result:
-                digest_result = dom.getElementsByTagName('ns2:invoiceDigestResult')
+            digest_result_elements = find_xml_elements_with_namespace_aware(dom, 'invoiceDigestResult')
             
-            if digest_result:
-                current_page_str = get_xml_element_value(digest_result[0], 'currentPage', '')
-                available_page_str = get_xml_element_value(digest_result[0], 'availablePage', '')
-                available_count_str = get_xml_element_value(digest_result[0], 'availableCount', '')
+            if digest_result_elements:
+                digest_result = digest_result_elements[0]
+                current_page_str = get_xml_element_value(digest_result, 'currentPage', '')
+                available_page_str = get_xml_element_value(digest_result, 'availablePage', '')
+                available_count_str = get_xml_element_value(digest_result, 'availableCount', '')
                 
                 current_page = int(current_page_str) if current_page_str else None
                 available_page = int(available_page_str) if available_page_str else None
@@ -846,7 +838,7 @@ class NavOnlineInvoiceClient:
             dom = parse_xml_safely(xml_response)
             
             # Check for errors first
-            error_elements = dom.getElementsByTagName('errorCode')
+            error_elements = find_xml_elements_with_namespace_aware(dom, 'errorCode')
             if error_elements:
                 error_info = self._parse_error_response(xml_response)
                 if error_info.error_code in ['INVOICE_NOT_FOUND', 'NO_INVOICE_FOUND']:
@@ -854,7 +846,7 @@ class NavOnlineInvoiceClient:
                 raise NavApiException(f"NAV API Error: {error_info.error_code} - {error_info.message}")
             
             # Extract the base64 encoded invoice data
-            invoice_data_elements = dom.getElementsByTagName('invoiceData')
+            invoice_data_elements = find_xml_elements_with_namespace_aware(dom, 'invoiceData')
             if not invoice_data_elements:
                 raise NavXmlParsingException("No invoice data found in response")
             
@@ -903,14 +895,14 @@ class NavOnlineInvoiceClient:
             
             # Parse supplier information
             supplier_info = None
-            supplier_elements = invoice_dom.getElementsByTagName('supplierInfo')
+            supplier_elements = find_xml_elements_with_namespace_aware(invoice_dom, 'supplierInfo')
             if supplier_elements:
                 supplier_elem = supplier_elements[0]
                 supplier_name = get_xml_element_value(supplier_elem, 'supplierName', '')
                 
                 # Parse supplier tax number
                 supplier_tax_number = None
-                tax_num_elements = supplier_elem.getElementsByTagName('supplierTaxNumber')
+                tax_num_elements = find_xml_elements_with_namespace_aware(supplier_elem, 'supplierTaxNumber')
                 if tax_num_elements:
                     taxpayer_id = get_xml_element_value(tax_num_elements[0], 'taxpayerId', '')
                     vat_code = get_xml_element_value(tax_num_elements[0], 'vatCode', '')
@@ -931,16 +923,16 @@ class NavOnlineInvoiceClient:
             
             # Parse customer information
             customer_info = None
-            customer_elements = invoice_dom.getElementsByTagName('customerInfo')
+            customer_elements = find_xml_elements_with_namespace_aware(invoice_dom, 'customerInfo')
             if customer_elements:
                 customer_elem = customer_elements[0]
                 customer_name = get_xml_element_value(customer_elem, 'customerName', '')
                 
                 # Parse customer tax number
                 customer_tax_number = None
-                cust_vat_data = customer_elem.getElementsByTagName('customerVatData')
+                cust_vat_data = find_xml_elements_with_namespace_aware(customer_elem, 'customerVatData')
                 if cust_vat_data:
-                    tax_num_elements = cust_vat_data[0].getElementsByTagName('customerTaxNumber')
+                    tax_num_elements = find_xml_elements_with_namespace_aware(cust_vat_data[0], 'customerTaxNumber')
                     if tax_num_elements:
                         taxpayer_id = get_xml_element_value(tax_num_elements[0], 'taxpayerId', '')
                         vat_code = get_xml_element_value(tax_num_elements[0], 'vatCode', '')
@@ -964,11 +956,11 @@ class NavOnlineInvoiceClient:
             invoice_vat_amount = 0.0
             invoice_gross_amount = 0.0
             
-            summary_elements = invoice_dom.getElementsByTagName('invoiceSummary')
+            summary_elements = find_xml_elements_with_namespace_aware(invoice_dom, 'invoiceSummary')
             if summary_elements:
                 summary_elem = summary_elements[0]
                 # Try to get from summaryNormal first
-                normal_summary = summary_elem.getElementsByTagName('summaryNormal')
+                normal_summary = find_xml_elements_with_namespace_aware(summary_elem, 'summaryNormal')
                 if normal_summary:
                     net_amount_str = get_xml_element_value(normal_summary[0], 'invoiceNetAmount', '0')
                     vat_amount_str = get_xml_element_value(normal_summary[0], 'invoiceVatAmount', '0')
@@ -980,7 +972,7 @@ class NavOnlineInvoiceClient:
                         logger.warning(f"Could not parse invoice amounts: net={net_amount_str}, vat={vat_amount_str}")
                 
                 # Get gross amount from summaryGrossData
-                gross_summary = summary_elem.getElementsByTagName('summaryGrossData')
+                gross_summary = find_xml_elements_with_namespace_aware(summary_elem, 'summaryGrossData')
                 if gross_summary:
                     gross_amount_str = get_xml_element_value(gross_summary[0], 'invoiceGrossAmount', '0')
                     try:
@@ -1084,10 +1076,10 @@ class NavOnlineInvoiceClient:
             # Parse response
             try:
                 dom = parse_xml_safely(xml_response)
-                result_element = dom.getElementsByTagName("invoiceCheckResult")
+                result_elements = find_xml_elements_with_namespace_aware(dom, "invoiceCheckResult")
                 
-                if result_element:
-                    return result_element[0].firstChild.nodeValue.lower() == "true"
+                if result_elements:
+                    return result_elements[0].firstChild.nodeValue.lower() == "true"
                 else:
                     return False
                     
