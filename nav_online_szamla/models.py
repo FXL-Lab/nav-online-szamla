@@ -168,7 +168,7 @@ class NavCredentials:
     login: str
     password: str
     signer_key: str
-    tax_number: str = "32703094"  # Default tax number
+    tax_number: str
 
 
 @dataclass

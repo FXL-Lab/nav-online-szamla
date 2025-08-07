@@ -857,29 +857,152 @@ class NavOnlineInvoiceClient:
                     # This could be improved by looking at the supplier tax number vs our tax number
                     invoice_direction = InvoiceDirection.OUTBOUND
 
-                    # Parse dates
-                    ins_date_str = get_xml_element_value(invoice_elem, "insDate", "")
-                    ins_date = (
-                        datetime.fromisoformat(ins_date_str.replace("Z", "+00:00"))
-                        if ins_date_str
-                        else None
-                    )
-
-                    # Parse other fields
+                    # Parse batch index
                     batch_index_str = get_xml_element_value(
                         invoice_elem, "batchIndex", ""
                     )
                     batch_index = int(batch_index_str) if batch_index_str else None
 
+                    # Parse invoice operation and category
                     invoice_operation = get_xml_element_value(
-                        invoice_elem, "invoiceOperation", "CREATE"
+                        invoice_elem, "invoiceOperation", None
                     )
+                    invoice_category = get_xml_element_value(
+                        invoice_elem, "invoiceCategory", None
+                    )
+
+                    # Parse invoice issue date
+                    invoice_issue_date_str = get_xml_element_value(invoice_elem, "invoiceIssueDate", "")
+                    invoice_issue_date = None
+                    if invoice_issue_date_str:
+                        try:
+                            invoice_issue_date = datetime.strptime(invoice_issue_date_str, "%Y-%m-%d")
+                        except ValueError:
+                            logger.warning(f"Could not parse invoice issue date: {invoice_issue_date_str}")
+
+                    # Parse supplier information
                     supplier_tax_number = get_xml_element_value(
-                        invoice_elem, "supplierTaxNumber", ""
+                        invoice_elem, "supplierTaxNumber", None
                     )
+                    supplier_group_member_tax_number = get_xml_element_value(
+                        invoice_elem, "supplierGroupMemberTaxNumber", None
+                    )
+                    supplier_name = get_xml_element_value(
+                        invoice_elem, "supplierName", None
+                    )
+
+                    # Parse insertion date
+                    ins_date_str = get_xml_element_value(invoice_elem, "insDate", "")
+                    ins_date = None
+                    if ins_date_str:
+                        try:
+                            ins_date = datetime.fromisoformat(ins_date_str.replace("Z", "+00:00"))
+                        except ValueError:
+                            logger.warning(f"Could not parse ins date: {ins_date_str}")
+
+                    # Parse customer information
                     customer_tax_number = get_xml_element_value(
-                        invoice_elem, "customerTaxNumber", ""
+                        invoice_elem, "customerTaxNumber", None
                     )
+                    customer_group_member_tax_number = get_xml_element_value(
+                        invoice_elem, "customerGroupMemberTaxNumber", None
+                    )
+                    customer_name = get_xml_element_value(
+                        invoice_elem, "customerName", None
+                    )
+
+                    # Parse payment information
+                    payment_method = get_xml_element_value(
+                        invoice_elem, "paymentMethod", None
+                    )
+                    payment_date_str = get_xml_element_value(invoice_elem, "paymentDate", "")
+                    payment_date = None
+                    if payment_date_str:
+                        try:
+                            payment_date = datetime.strptime(payment_date_str, "%Y-%m-%d")
+                        except ValueError:
+                            logger.warning(f"Could not parse payment date: {payment_date_str}")
+
+                    # Parse invoice appearance and source
+                    invoice_appearance = get_xml_element_value(
+                        invoice_elem, "invoiceAppearance", None
+                    )
+                    source = get_xml_element_value(
+                        invoice_elem, "source", None
+                    )
+
+                    # Parse invoice delivery date
+                    invoice_delivery_date_str = get_xml_element_value(invoice_elem, "invoiceDeliveryDate", "")
+                    invoice_delivery_date = None
+                    if invoice_delivery_date_str:
+                        try:
+                            invoice_delivery_date = datetime.strptime(invoice_delivery_date_str, "%Y-%m-%d")
+                        except ValueError:
+                            logger.warning(f"Could not parse invoice delivery date: {invoice_delivery_date_str}")
+
+                    # Parse currency and amounts
+                    currency = get_xml_element_value(
+                        invoice_elem, "currency", None
+                    )
+                    
+                    # Parse invoice amounts
+                    invoice_net_amount_str = get_xml_element_value(invoice_elem, "invoiceNetAmount", "")
+                    invoice_net_amount = None
+                    if invoice_net_amount_str:
+                        try:
+                            invoice_net_amount = float(invoice_net_amount_str)
+                        except ValueError:
+                            logger.warning(f"Could not parse invoice net amount: {invoice_net_amount_str}")
+
+                    invoice_net_amount_huf_str = get_xml_element_value(invoice_elem, "invoiceNetAmountHUF", "")
+                    invoice_net_amount_huf = None
+                    if invoice_net_amount_huf_str:
+                        try:
+                            invoice_net_amount_huf = float(invoice_net_amount_huf_str)
+                        except ValueError:
+                            logger.warning(f"Could not parse invoice net amount HUF: {invoice_net_amount_huf_str}")
+
+                    invoice_vat_amount_str = get_xml_element_value(invoice_elem, "invoiceVatAmount", "")
+                    invoice_vat_amount = None
+                    if invoice_vat_amount_str:
+                        try:
+                            invoice_vat_amount = float(invoice_vat_amount_str)
+                        except ValueError:
+                            logger.warning(f"Could not parse invoice VAT amount: {invoice_vat_amount_str}")
+
+                    invoice_vat_amount_huf_str = get_xml_element_value(invoice_elem, "invoiceVatAmountHUF", "")
+                    invoice_vat_amount_huf = None
+                    if invoice_vat_amount_huf_str:
+                        try:
+                            invoice_vat_amount_huf = float(invoice_vat_amount_huf_str)
+                        except ValueError:
+                            logger.warning(f"Could not parse invoice VAT amount HUF: {invoice_vat_amount_huf_str}")
+
+                    # Parse transaction information
+                    transaction_id = get_xml_element_value(
+                        invoice_elem, "transactionId", None
+                    )
+                    index_str = get_xml_element_value(invoice_elem, "index", "")
+                    index = None
+                    if index_str:
+                        try:
+                            index = int(index_str)
+                        except ValueError:
+                            logger.warning(f"Could not parse index: {index_str}")
+
+                    # Parse modification information
+                    original_invoice_number = get_xml_element_value(
+                        invoice_elem, "originalInvoiceNumber", None
+                    )
+                    modification_index_str = get_xml_element_value(invoice_elem, "modificationIndex", "")
+                    modification_index = None
+                    if modification_index_str:
+                        try:
+                            modification_index = int(modification_index_str)
+                        except ValueError:
+                            logger.warning(f"Could not parse modification index: {modification_index_str}")
+
+                    # Parse other fields
                     completeness_indicator = (
                         get_xml_element_value(
                             invoice_elem, "completenessIndicator", "false"
@@ -887,11 +1010,11 @@ class NavOnlineInvoiceClient:
                         == "true"
                     )
                     original_request_version = get_xml_element_value(
-                        invoice_elem, "originalRequestVersion", "3.0"
+                        invoice_elem, "originalRequestVersion", None
                     )
 
                     logger.debug(
-                        f"Parsed invoice digest: {invoice_number}, operation: {invoice_operation}, supplier: {supplier_tax_number}"
+                        f"Parsed invoice digest: {invoice_number}, operation: {invoice_operation}, supplier: {supplier_tax_number}, customer: {customer_tax_number}"
                     )
 
                     digest = InvoiceDigestType(
@@ -899,9 +1022,29 @@ class NavOnlineInvoiceClient:
                         invoice_direction=invoice_direction,
                         batch_index=batch_index,
                         invoice_operation=invoice_operation,
+                        invoice_category=invoice_category,
+                        invoice_issue_date=invoice_issue_date,
                         supplier_tax_number=supplier_tax_number,
-                        customer_tax_number=customer_tax_number,
+                        supplier_name=supplier_name,
                         ins_date=ins_date,
+                        supplier_group_member_tax_number=supplier_group_member_tax_number,
+                        customer_tax_number=customer_tax_number,
+                        customer_group_member_tax_number=customer_group_member_tax_number,
+                        customer_name=customer_name,
+                        payment_method=payment_method,
+                        payment_date=payment_date,
+                        invoice_appearance=invoice_appearance,
+                        source=source,
+                        invoice_delivery_date=invoice_delivery_date,
+                        currency=currency,
+                        invoice_net_amount=invoice_net_amount,
+                        invoice_net_amount_huf=invoice_net_amount_huf,
+                        invoice_vat_amount=invoice_vat_amount,
+                        invoice_vat_amount_huf=invoice_vat_amount_huf,
+                        transaction_id=transaction_id,
+                        index=index,
+                        original_invoice_number=original_invoice_number,
+                        modification_index=modification_index,
                         completeness_indicator=completeness_indicator,
                         original_request_version=original_request_version,
                     )
