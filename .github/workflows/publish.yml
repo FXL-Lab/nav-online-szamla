@@ -1,7 +1,7 @@
 name: Publish to PyPI
 
 on:
-  workflow_dispatch:  # Manual trigger
+  workflow_dispatch:
   pull_request:
     types: [closed]
     branches: [main]
@@ -9,7 +9,7 @@ on:
 jobs:
   publish:
     # Only run if PR was merged (not just closed)
-    if: github.event.pull_request.merged == true
+    if: (github.event.pull_request.merged == true) || (github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     
     steps:
