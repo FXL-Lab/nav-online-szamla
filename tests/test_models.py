@@ -183,16 +183,16 @@ class TestInvoiceDigest:
 class TestNavCredentials:
     """Test NavCredentials data class."""
 
-    def test_nav_credentials_default(self):
-        """Test NavCredentials with default tax number."""
+    def test_nav_credentials_basic(self):
+        """Test NavCredentials with all required fields."""
         credentials = NavCredentials(
-            login="test_user", password="test_password", signer_key="test_key"
+            login="test_user", password="test_password", signer_key="test_key", tax_number="32703094"
         )
 
         assert credentials.login == "test_user"
         assert credentials.password == "test_password"
         assert credentials.signer_key == "test_key"
-        assert credentials.tax_number == "32703094"  # Default value
+        assert credentials.tax_number == "32703094"
 
     def test_nav_credentials_custom(self):
         """Test NavCredentials with custom tax number."""
