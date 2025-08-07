@@ -6,14 +6,12 @@ XML processing, and other common tasks.
 """
 import hashlib
 import random
-import string
 from datetime import datetime, timedelta
 from typing import List, Tuple, Optional
 import xml.dom.minidom
 
 from .config import (
-    CUSTOM_ID_CHARACTERS, CUSTOM_ID_LENGTH, MAX_DATE_RANGE_DAYS,
-    SIGNATURE_ALGORITHM, PASSWORD_HASH_ALGORITHM
+    CUSTOM_ID_CHARACTERS, CUSTOM_ID_LENGTH, MAX_DATE_RANGE_DAYS
 )
 from .exceptions import NavValidationException, NavXmlParsingException
 

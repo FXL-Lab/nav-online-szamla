@@ -4,7 +4,6 @@ Configuration and constants for NAV Online Számla API.
 This module contains configuration settings, constants, and default values 
 used throughout the NAV Online Számla API client.
 """
-from typing import Dict, Any
 
 # API Base URL
 ONLINE_SZAMLA_URL = "https://api.onlineszamla.nav.gov.hu/invoiceService/v3/"
@@ -48,13 +47,6 @@ RETRYABLE_HTTP_STATUS_CODES = [500, 502, 503, 504]
 XML_NAMESPACES = {
     'ns2': 'http://schemas.nav.gov.hu/OSA/3.0/api',
     'base': 'http://schemas.nav.gov.hu/OSA/3.0/base'
-}
-
-# Invoice direction mappings
-INVOICE_DIRECTION_MAPPING = {
-    'OUTBOUND': 'Kiállító oldali',
-    'INBOUND': 'Vevő oldali',
-    'BOTH': 'Mindkét oldal'
 }
 
 # Customer VAT status mappings

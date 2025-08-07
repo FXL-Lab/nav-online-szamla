@@ -5,9 +5,7 @@ This module provides the main client class for interacting with the NAV Online S
 """
 import logging
 from datetime import datetime
-from typing import List, Optional, Dict, Any
-import pandas as pd
-import xml.dom.minidom
+from typing import List, Optional
 
 from .config import (
     ONLINE_SZAMLA_URL, MAX_DATE_RANGE_DAYS, SOFTWARE_ID, SOFTWARE_NAME, 
@@ -15,16 +13,12 @@ from .config import (
 )
 from .models import (
     NavCredentials, InvoiceDirection, InvoiceDigest, InvoiceDetail,
-    ApiResponse, ErrorInfo, TaxNumber, SupplierInfo, CustomerInfo,
-    QueryInvoiceDigestRequest, QueryInvoiceCheckRequest, QueryInvoiceDataRequest,
-    QueryInvoiceChainDigestRequest, MandatoryQueryParams, AdditionalQueryParams,
-    RelationalQueryParams, TransactionQueryParams, InvoiceQueryParams,
-    DateRange, DateTimeRange, OriginalInvoiceNumber, RelationalQueryParam,
+    ErrorInfo, TaxNumber, SupplierInfo, CustomerInfo, QueryInvoiceDigestRequest, 
+    QueryInvoiceCheckRequest, QueryInvoiceDataRequest, QueryInvoiceChainDigestRequest, 
+    MandatoryQueryParams, InvoiceQueryParams, DateRange,
     # API-compliant response types
-    QueryInvoiceDigestResponseType, QueryInvoiceCheckResponseType,
-    QueryInvoiceDataResponseType, QueryInvoiceChainDigestResponseType,
-    InvoiceDigestType, InvoiceCheckResultType, InvoiceDataType,
-    BasicOnlineInvoiceResponseType, BasicResultType, BasicHeaderType
+    QueryInvoiceDigestResponseType, QueryInvoiceCheckResponseType, QueryInvoiceDataResponseType,
+    InvoiceDigestType, BasicResultType, BasicHeaderType
 )
 from .exceptions import (
     NavApiException, NavValidationException, NavXmlParsingException,
@@ -32,8 +26,7 @@ from .exceptions import (
 )
 from .utils import (
     generate_password_hash, generate_custom_id, calculate_request_signature,
-    validate_date_range, validate_tax_number, split_date_range,
-    parse_xml_safely, get_xml_element_value, format_timestamp_for_nav,
+    validate_tax_number, parse_xml_safely, get_xml_element_value, format_timestamp_for_nav,
     is_network_error, find_xml_elements_with_namespace_aware
 )
 from .http_client import NavHttpClient
