@@ -11,7 +11,12 @@ from datetime import datetime, timedelta, timezone
 from typing import List, Tuple, Optional
 import xml.dom.minidom
 
-from .config import CUSTOM_ID_CHARACTERS, CUSTOM_ID_LENGTH, MAX_DATE_RANGE_DAYS, NETWORK_ERROR_KEYWORDS
+from .config import (
+    CUSTOM_ID_CHARACTERS,
+    CUSTOM_ID_LENGTH,
+    MAX_DATE_RANGE_DAYS,
+    NETWORK_ERROR_KEYWORDS,
+)
 from .exceptions import NavValidationException, NavXmlParsingException
 
 

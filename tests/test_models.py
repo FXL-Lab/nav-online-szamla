@@ -186,7 +186,10 @@ class TestNavCredentials:
     def test_nav_credentials_basic(self):
         """Test NavCredentials with all required fields."""
         credentials = NavCredentials(
-            login="test_user", password="test_password", signer_key="test_key", tax_number="32703094"
+            login="test_user",
+            password="test_password",
+            signer_key="test_key",
+            tax_number="32703094",
         )
 
         assert credentials.login == "test_user"

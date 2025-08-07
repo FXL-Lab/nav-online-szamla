@@ -326,23 +326,25 @@ class InvoiceLine:
     """Invoice line item structure."""
 
     line_number: int  # Line number (starting from 1)
-    line_expression_indicator: bool  # True if quantity can be expressed in natural units
-    
+    line_expression_indicator: (
+        bool  # True if quantity can be expressed in natural units
+    )
+
     # Product/service description
     line_nature_indicator: Optional[LineNatureIndicator] = None
     line_description: Optional[str] = None
-    
+
     # Quantity and pricing
     quantity: Optional[float] = None
     unit_of_measure: Optional[UnitOfMeasure] = None
     unit_of_measure_own: Optional[str] = None  # Custom unit of measure
     unit_price: Optional[float] = None  # Unit price in invoice currency
     unit_price_huf: Optional[float] = None  # Unit price in HUF
-    
+
     # Line amounts (one of these should be filled based on invoice type)
     line_amounts_normal: Optional[LineAmountsNormal] = None
     line_amounts_simplified: Optional[LineAmountsSimplified] = None
-    
+
     # Additional line data
     product_codes: Optional[List[ProductCode]] = None
     line_discount_data: Optional[DiscountData] = None
@@ -351,7 +353,7 @@ class InvoiceLine:
     obligated_for_product_fee: Optional[bool] = None
     gpc_excise: Optional[float] = None  # Gas, electricity, coal excise tax in HUF
     neta_declaration: Optional[bool] = None
-    
+
     # Structured additional data
     conventional_line_info: Optional[ConventionalInvoiceInfo] = None
     additional_line_data: Optional[List[AdditionalData]] = None
@@ -402,9 +404,11 @@ class InvoiceSummary:
     """Invoice summary structure."""
 
     # Gross amounts (always present)
-    invoice_gross_amount: Optional[float] = None  # Total gross amount in invoice currency
+    invoice_gross_amount: Optional[float] = (
+        None  # Total gross amount in invoice currency
+    )
     invoice_gross_amount_huf: Optional[float] = None  # Total gross amount in HUF
-    
+
     # Type-specific summaries (one of these should be filled)
     summary_normal: Optional[SummaryNormal] = None  # For normal and aggregate invoices
     summary_simplified: Optional[SummarySimplified] = None  # For simplified invoices
@@ -439,53 +443,53 @@ class InvoiceDetail:
     issue_date: datetime
     completion_date: Optional[datetime] = None
     completeness_indicator: Optional[bool] = None
-    
+
     # Invoice classification and delivery
     invoice_category: Optional[InvoiceCategory] = None
     invoice_delivery_date: Optional[datetime] = None
     invoice_delivery_period_start: Optional[datetime] = None
     invoice_delivery_period_end: Optional[datetime] = None
     invoice_accounting_delivery_date: Optional[datetime] = None
-    
+
     # Invoice indicators and flags
     periodical_settlement: Optional[bool] = None
     small_business_indicator: Optional[bool] = None
     utility_settlement_indicator: Optional[bool] = None
     self_billing_indicator: Optional[bool] = None
     cash_accounting_indicator: Optional[bool] = None
-    
+
     # Currency and exchange
     currency_code: str = "HUF"
     exchange_rate: Optional[float] = None
-    
+
     # Payment information
     payment_method: Optional[PaymentMethod] = None
     payment_date: Optional[datetime] = None
-    
+
     # Invoice appearance and source
     invoice_appearance: Optional[InvoiceAppearance] = None
     source: Optional[Source] = None
-    
+
     # Party information
     supplier_info: Optional[SupplierInfo] = None
     customer_info: Optional[CustomerInfo] = None
     fiscal_representative_info: Optional[FiscalRepresentativeInfo] = None
-    
+
     # Financial amounts
     invoice_net_amount: Optional[float] = None
     invoice_vat_amount: Optional[float] = None
     invoice_gross_amount: Optional[float] = None
     invoice_net_amount_huf: Optional[float] = None
     invoice_vat_amount_huf: Optional[float] = None
-    
+
     # Additional structured data
     conventional_invoice_info: Optional[ConventionalInvoiceInfo] = None
     additional_invoice_data: Optional[List[AdditionalData]] = None
-    
+
     # Complex invoice content (structured data)
     invoice_lines: Optional[InvoiceLines] = None
     invoice_summary: Optional[InvoiceSummary] = None
-    
+
     # Legacy/compatibility field
     additional_data: Optional[Dict[str, Any]] = None
 
@@ -773,19 +777,21 @@ class InvoiceDataType:
     invoice_number: str
     invoice_issue_date: datetime
     completeness_indicator: bool
-    
+
     # Invoice direction and operation
     invoice_direction: InvoiceDirection
     invoice_operation: Optional[InvoiceOperation] = None
-    
+
     # Invoice reference (for modifications)
     invoice_reference: Optional[Dict[str, Any]] = None  # InvoiceReferenceType
-    
+
     # Main invoice content
-    invoice_head: Optional[Dict[str, Any]] = None  # InvoiceHeadType - contains supplier/customer info and invoice detail
+    invoice_head: Optional[Dict[str, Any]] = (
+        None  # InvoiceHeadType - contains supplier/customer info and invoice detail
+    )
     invoice_lines: Optional[InvoiceLines] = None  # LinesType - structured line items
     invoice_summary: Optional[InvoiceSummary] = None  # SummaryType - structured totals
-    
+
     # Legacy compatibility fields
     supplier_info: Optional[SupplierInfo] = None
     customer_info: Optional[CustomerInfo] = None
