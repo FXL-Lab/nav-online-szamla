@@ -1935,7 +1935,6 @@ class NavOnlineInvoiceClient:
         start_date: datetime,
         end_date: datetime,
         invoice_direction: InvoiceDirection = InvoiceDirection.OUTBOUND,
-        max_invoices: Optional[int] = None,
     ) -> List[InvoiceDetail]:
         """
         Get all invoice data for a given date range by first querying invoice digests
@@ -1945,8 +1944,7 @@ class NavOnlineInvoiceClient:
             credentials: NAV API credentials
             start_date: Start date for the query range
             end_date: End date for the query range
-            invoice_direction: Invoice direction to query (default: BOTH)
-            max_invoices: Optional maximum number of invoices to process
+            invoice_direction: Invoice direction to query (default: OUTBOUND)
 
         Returns:
             List[InvoiceDetail]: List of detailed invoice data
@@ -2017,13 +2015,6 @@ class NavOnlineInvoiceClient:
 
                 # Step 2: Get detailed data for each invoice digest
                 for digest in digest_response.invoice_digests:
-                    # Check if we've reached the maximum invoice limit
-                    if max_invoices and processed_count >= max_invoices:
-                        logger.info(
-                            f"Reached maximum invoice limit ({max_invoices}), stopping processing"
-                        )
-                        return all_invoice_details
-
                     try:
                         logger.info(
                             f"Fetching details for invoice: {digest.invoice_number}"

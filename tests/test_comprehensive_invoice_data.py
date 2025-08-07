@@ -258,10 +258,10 @@ class TestComprehensiveInvoiceData:
                     assert result[0].invoice_gross_amount == 12700.0
                     assert result[1].invoice_gross_amount == 25400.0
 
-    def test_get_all_invoice_data_for_date_range_with_max_limit(
+    def test_get_all_invoice_data_for_date_range_multiple_invoices(
         self, client, credentials, sample_invoice_digest, sample_invoice_detail
     ):
-        """Test comprehensive invoice data retrieval with max invoice limit."""
+        """Test comprehensive invoice data retrieval with multiple invoices."""
         start_date = datetime.now() - timedelta(days=7)
         end_date = datetime.now()
 
@@ -320,17 +320,16 @@ class TestComprehensiveInvoiceData:
                     client, "query_invoice_data", side_effect=mock_query_data
                 ):
 
-                    # Limit to 2 invoices
+                    # Get all invoices
                     result = client.get_all_invoice_data_for_date_range(
                         credentials=credentials,
                         start_date=start_date,
                         end_date=end_date,
                         invoice_direction=InvoiceDirection.OUTBOUND,
-                        max_invoices=2,
                     )
 
-                    # Should only get 2 invoices, not all 3
-                    assert len(result) == 2
+                    # Should get all 3 invoices
+                    assert len(result) == 3
 
     def test_get_all_invoice_data_with_progress_callback(self, client, credentials):
         """Test comprehensive invoice data retrieval with progress callback."""
