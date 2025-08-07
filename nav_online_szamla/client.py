@@ -1068,7 +1068,7 @@ class NavOnlineInvoiceClient:
             
             # Parse response
             try:
-                dom = parse_xml_safely(xml_response)
+                dom = parse_xml_safely(xml_response.text)
                 result_elements = find_xml_elements_with_namespace_aware(dom, "invoiceCheckResult")
                 
                 if result_elements:
