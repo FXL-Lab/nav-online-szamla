@@ -102,12 +102,16 @@ jobs:
       uses: actions/github-script@v6
       with:
         script: |
-          github.rest.issues.createComment({
-            issue_number: ${{ github.event.pull_request.number }},
+          const version = '${{ steps.version-check.outputs.version }}';
+          const packageName = '${{ steps.version-check.outputs.package_name }}';
+          const prNumber = context.payload.pull_request.number;
+          
+          await github.rest.issues.createComment({
+            issue_number: prNumber,
             owner: context.repo.owner,
             repo: context.repo.repo,
-            body: '🚀 Package v${{ steps.version-check.outputs.version }} has been successfully published to PyPI!\n\n📦 [View on PyPI](https://pypi.org/project/${{ steps.version-check.outputs.package_name }}/${{ steps.version-check.outputs.version }}/)\n🏷️ [GitHub Release](https://github.com/${{ github.repository }}/releases/tag/v${{ steps.version-check.outputs.version }})'
-          })
+            body: `🚀 Package v${version} has been successfully published to PyPI!\n\n📦 [View on PyPI](https://pypi.org/project/${packageName}/${version}/)\n🏷️ [GitHub Release](https://github.com/${context.repo.owner}/${context.repo.repo}/releases/tag/v${version})`
+          });
 
     - name: Skip publishing message
       if: steps.version-check.outputs.should_publish == 'false'
