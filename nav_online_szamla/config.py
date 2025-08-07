@@ -9,10 +9,7 @@ used throughout the NAV Online Számla API client.
 ONLINE_SZAMLA_URL = "https://api.onlineszamla.nav.gov.hu/invoiceService/v3/"
 
 # HTTP Headers
-DEFAULT_HEADERS = {
-    'Content-Type': 'application/xml',
-    'Accept': 'application/xml'
-}
+DEFAULT_HEADERS = {"Content-Type": "application/xml", "Accept": "application/xml"}
 
 # Default timeout for HTTP requests (seconds)
 DEFAULT_TIMEOUT = 30
@@ -40,40 +37,40 @@ CUSTOM_ID_CHARACTERS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123
 CUSTOM_ID_LENGTH = 30
 
 # Error handling
-NETWORK_ERROR_KEYWORDS = ['connection', 'timeout', 'network', 'resolve']
+NETWORK_ERROR_KEYWORDS = ["connection", "timeout", "network", "resolve"]
 RETRYABLE_HTTP_STATUS_CODES = [500, 502, 503, 504]
 
 # XML Namespaces (if needed for parsing)
 XML_NAMESPACES = {
-    'ns2': 'http://schemas.nav.gov.hu/OSA/3.0/api',
-    'base': 'http://schemas.nav.gov.hu/OSA/3.0/base'
+    "ns2": "http://schemas.nav.gov.hu/OSA/3.0/api",
+    "base": "http://schemas.nav.gov.hu/OSA/3.0/base",
 }
 
 # Customer VAT status mappings
 CUSTOMER_VAT_STATUS_MAPPING = {
-    'DOMESTIC': 'Belföldi ÁFA alany',
-    'PRIVATE_PERSON': 'Nem ÁFA alany (belföldi vagy külföldi) természetes személy',
-    'OTHER': 'Egyéb (belföldi nem ÁFA alany, nem természetes személy, külföldi Áfa alany és külföldi nem ÁFA alany, nem természetes személy)'
+    "DOMESTIC": "Belföldi ÁFA alany",
+    "PRIVATE_PERSON": "Nem ÁFA alany (belföldi vagy külföldi) természetes személy",
+    "OTHER": "Egyéb (belföldi nem ÁFA alany, nem természetes személy, külföldi Áfa alany és külföldi nem ÁFA alany, nem természetes személy)",
 }
 
 # Source type mappings
 INVOICE_SOURCE_MAPPING = {
-    'PAPER': 'Papír',
-    'ELECTRONIC': 'Elektronikus',
-    'EDI': 'EDI',
-    'UNKNOWN': 'Ismeretlen'
+    "PAPER": "Papír",
+    "ELECTRONIC": "Elektronikus",
+    "EDI": "EDI",
+    "UNKNOWN": "Ismeretlen",
 }
 
 # Operation type mappings
 INVOICE_OPERATION_MAPPING = {
-    'CREATE': 'Létrehozás',
-    'MODIFY': 'Módosítás',
-    'STORNO': 'Stornó'
+    "CREATE": "Létrehozás",
+    "MODIFY": "Módosítás",
+    "STORNO": "Stornó",
 }
 
 # Logging configuration
-LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-LOG_LEVEL = 'INFO'
+LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+LOG_LEVEL = "INFO"
 
 # Software identification for NAV API
 # Must be exactly 18 characters: [0-9A-Z\-]{18}

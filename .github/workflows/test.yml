@@ -47,18 +47,15 @@ jobs:
     
     - name: Check code formatting with black
       run: |
-        poetry run pip install black
         poetry run black --check nav_online_szamla/ tests/
 
     - name: Lint with flake8
       run: |
-        poetry run pip install flake8
         poetry run flake8 nav_online_szamla/ tests/ --count --select=E9,F63,F7,F82 --show-source --statistics
         poetry run flake8 nav_online_szamla/ tests/ --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
 
     - name: Type checking with mypy
       run: |
-        poetry run pip install mypy types-requests
         poetry run mypy nav_online_szamla/ --ignore-missing-imports || true
 
     - name: Upload coverage reports to Codecov

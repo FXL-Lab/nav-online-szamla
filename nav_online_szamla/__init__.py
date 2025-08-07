@@ -7,27 +7,58 @@ This package provides a Python client for interacting with the Hungarian NAV
 
 from .client import NavOnlineInvoiceClient
 from .models import (
-    NavCredentials, InvoiceDirection, InvoiceOperation, CustomerVatStatus,
-    InvoiceDigest, InvoiceDetail, ApiResponse,
+    NavCredentials,
+    InvoiceDirection,
+    InvoiceOperation,
+    CustomerVatStatus,
+    InvoiceDigest,
+    InvoiceDetail,
+    ApiResponse,
     # New API-compliant request types
-    QueryInvoiceDigestRequest, QueryInvoiceCheckRequest, QueryInvoiceDataRequest,
-    QueryInvoiceChainDigestRequest, MandatoryQueryParams, AdditionalQueryParams,
-    RelationalQueryParams, TransactionQueryParams, InvoiceQueryParams,
-    DateRange, DateTimeRange, OriginalInvoiceNumber, RelationalQueryParam,
+    QueryInvoiceDigestRequest,
+    QueryInvoiceCheckRequest,
+    QueryInvoiceDataRequest,
+    QueryInvoiceChainDigestRequest,
+    MandatoryQueryParams,
+    AdditionalQueryParams,
+    RelationalQueryParams,
+    TransactionQueryParams,
+    InvoiceQueryParams,
+    DateRange,
+    DateTimeRange,
+    OriginalInvoiceNumber,
+    RelationalQueryParam,
     # New API-compliant response types
-    BasicOnlineInvoiceResponseType, QueryInvoiceDigestResponseType,
-    QueryInvoiceCheckResponseType, QueryInvoiceDataResponseType,
-    QueryInvoiceChainDigestResponseType, InvoiceDigestType, InvoiceCheckResultType,
-    InvoiceDataType, InvoiceChainDigestType, BasicResultType, BasicHeaderType,
-    SoftwareType, NotificationType,
+    BasicOnlineInvoiceResponseType,
+    QueryInvoiceDigestResponseType,
+    QueryInvoiceCheckResponseType,
+    QueryInvoiceDataResponseType,
+    QueryInvoiceChainDigestResponseType,
+    InvoiceDigestType,
+    InvoiceCheckResultType,
+    InvoiceDataType,
+    InvoiceChainDigestType,
+    BasicResultType,
+    BasicHeaderType,
+    SoftwareType,
+    NotificationType,
     # New enums
-    InvoiceCategory, PaymentMethod, InvoiceAppearance, Source, QueryOperator
+    InvoiceCategory,
+    PaymentMethod,
+    InvoiceAppearance,
+    Source,
+    QueryOperator,
 )
 from .exceptions import (
-    NavApiException, NavAuthenticationException, NavValidationException,
-    NavNetworkException, NavRateLimitException, NavXmlParsingException,
-    NavConfigurationException, NavInvoiceNotFoundException,
-    NavRequestSignatureException
+    NavApiException,
+    NavAuthenticationException,
+    NavValidationException,
+    NavNetworkException,
+    NavRateLimitException,
+    NavXmlParsingException,
+    NavConfigurationException,
+    NavInvoiceNotFoundException,
+    NavRequestSignatureException,
 )
 
 __version__ = "0.0.1"
@@ -37,61 +68,56 @@ __email__ = "gergo.emmert@fxltech.com"
 __all__ = [
     # Main client
     "NavOnlineInvoiceClient",
-    
     # Models and data classes
     "NavCredentials",
-    "InvoiceDirection", 
+    "InvoiceDirection",
     "InvoiceOperation",
     "CustomerVatStatus",
     "InvoiceDigest",
-    "InvoiceDetail", 
+    "InvoiceDetail",
     "ApiResponse",
-    
     # API-compliant request types
     "QueryInvoiceDigestRequest",
-    "QueryInvoiceCheckRequest", 
+    "QueryInvoiceCheckRequest",
     "QueryInvoiceDataRequest",
     "QueryInvoiceChainDigestRequest",
     "MandatoryQueryParams",
     "AdditionalQueryParams",
-    "RelationalQueryParams", 
+    "RelationalQueryParams",
     "TransactionQueryParams",
     "InvoiceQueryParams",
     "DateRange",
     "DateTimeRange",
     "OriginalInvoiceNumber",
     "RelationalQueryParam",
-    
     # API-compliant response types
     "BasicOnlineInvoiceResponseType",
     "QueryInvoiceDigestResponseType",
-    "QueryInvoiceCheckResponseType", 
+    "QueryInvoiceCheckResponseType",
     "QueryInvoiceDataResponseType",
     "QueryInvoiceChainDigestResponseType",
     "InvoiceDigestType",
     "InvoiceCheckResultType",
-    "InvoiceDataType", 
+    "InvoiceDataType",
     "InvoiceChainDigestType",
     "BasicResultType",
     "BasicHeaderType",
     "SoftwareType",
     "NotificationType",
-    
     # Enums
     "InvoiceCategory",
-    "PaymentMethod", 
+    "PaymentMethod",
     "InvoiceAppearance",
     "Source",
     "QueryOperator",
-    
     # Exceptions
     "NavApiException",
     "NavAuthenticationException",
-    "NavValidationException", 
+    "NavValidationException",
     "NavNetworkException",
     "NavRateLimitException",
     "NavXmlParsingException",
-    "NavConfigurationException", 
+    "NavConfigurationException",
     "NavInvoiceNotFoundException",
-    "NavRequestSignatureException"
+    "NavRequestSignatureException",
 ]

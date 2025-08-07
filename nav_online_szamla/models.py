@@ -3,6 +3,7 @@ Data models for NAV Online Számla API.
 
 This module contains the data classes and models used by the NAV Online Számla API client.
 """
+
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
@@ -11,12 +12,14 @@ from typing import Optional, List, Dict, Any
 
 class InvoiceDirection(Enum):
     """Invoice direction enumeration."""
+
     OUTBOUND = "OUTBOUND"  # Kiállító oldali
-    INBOUND = "INBOUND"    # Vevő oldali
+    INBOUND = "INBOUND"  # Vevő oldali
 
 
 class InvoiceOperation(Enum):
     """Invoice operation enumeration."""
+
     CREATE = "CREATE"
     MODIFY = "MODIFY"
     STORNO = "STORNO"
@@ -24,6 +27,7 @@ class InvoiceOperation(Enum):
 
 class InvoiceCategory(Enum):
     """Invoice category enumeration."""
+
     NORMAL = "NORMAL"
     SIMPLIFIED = "SIMPLIFIED"
     AGGREGATE = "AGGREGATE"
@@ -31,6 +35,7 @@ class InvoiceCategory(Enum):
 
 class PaymentMethod(Enum):
     """Payment method enumeration."""
+
     TRANSFER = "TRANSFER"
     CASH = "CASH"
     CARD = "CARD"
@@ -40,6 +45,7 @@ class PaymentMethod(Enum):
 
 class InvoiceAppearance(Enum):
     """Invoice appearance enumeration."""
+
     PAPER = "PAPER"
     ELECTRONIC = "ELECTRONIC"
     EDI = "EDI"
@@ -48,6 +54,7 @@ class InvoiceAppearance(Enum):
 
 class Source(Enum):
     """Source enumeration."""
+
     WEB = "WEB"
     XML = "XML"
     MGM = "MGM"
@@ -56,23 +63,26 @@ class Source(Enum):
 
 class QueryOperator(Enum):
     """Query operator enumeration for relational queries."""
-    EQ = "EQ"   # Equal
-    GT = "GT"   # Greater than
-    GTE = "GTE" # Greater than or equal
-    LT = "LT"   # Less than
-    LTE = "LTE" # Less than or equal
+
+    EQ = "EQ"  # Equal
+    GT = "GT"  # Greater than
+    GTE = "GTE"  # Greater than or equal
+    LT = "LT"  # Less than
+    LTE = "LTE"  # Less than or equal
 
 
 class CustomerVatStatus(Enum):
     """Customer VAT status enumeration."""
-    DOMESTIC = "DOMESTIC"         # Belföldi ÁFA alany
+
+    DOMESTIC = "DOMESTIC"  # Belföldi ÁFA alany
     PRIVATE_PERSON = "PRIVATE_PERSON"  # Nem ÁFA alany természetes személy
-    OTHER = "OTHER"               # Egyéb
+    OTHER = "OTHER"  # Egyéb
 
 
 @dataclass
 class TaxNumber:
     """Tax number data structure."""
+
     taxpayer_id: str  # 8 digit taxpayer ID
     vat_code: Optional[str] = None
     county_code: Optional[str] = None
@@ -81,6 +91,7 @@ class TaxNumber:
 @dataclass
 class Address:
     """Address data structure."""
+
     country_code: str
     postal_code: str
     city: str
@@ -93,6 +104,7 @@ class Address:
 @dataclass
 class SupplierInfo:
     """Supplier information data structure."""
+
     tax_number: TaxNumber
     name: str
     address: Address
@@ -101,6 +113,7 @@ class SupplierInfo:
 @dataclass
 class CustomerInfo:
     """Customer information data structure."""
+
     name: str
     tax_number: Optional[TaxNumber] = None
     vat_status: Optional[CustomerVatStatus] = None
@@ -112,6 +125,7 @@ class CustomerInfo:
 @dataclass
 class InvoiceDigest:
     """Invoice digest data structure returned by queryInvoiceDigest."""
+
     invoice_number: str
     batch_index: Optional[int]
     invoice_operation: InvoiceOperation
@@ -131,6 +145,7 @@ class InvoiceDigest:
 @dataclass
 class InvoiceDetail:
     """Detailed invoice data structure."""
+
     invoice_number: str
     issue_date: datetime
     completion_date: Optional[datetime]
@@ -149,6 +164,7 @@ class InvoiceDetail:
 @dataclass
 class NavCredentials:
     """NAV API credentials."""
+
     login: str
     password: str
     signer_key: str
@@ -158,32 +174,36 @@ class NavCredentials:
 @dataclass
 class DateRange:
     """Date range structure."""
+
     date_from: str  # YYYY-MM-DD format
-    date_to: str    # YYYY-MM-DD format
+    date_to: str  # YYYY-MM-DD format
 
 
 @dataclass
 class DateTimeRange:
     """DateTime range structure."""
+
     date_time_from: str  # YYYY-MM-DDTHH:MM:SS.sssZ format
-    date_time_to: str    # YYYY-MM-DDTHH:MM:SS.sssZ format
+    date_time_to: str  # YYYY-MM-DDTHH:MM:SS.sssZ format
 
 
 @dataclass
 class OriginalInvoiceNumber:
     """Original invoice number structure."""
+
     original_invoice_number: str
 
 
 @dataclass
 class MandatoryQueryParams:
     """Mandatory query parameters according to API documentation.
-    
+
     One of the following must be provided:
     - invoiceIssueDate: Date range for invoice issue date
-    - insDate: DateTime range for processing timestamp  
+    - insDate: DateTime range for processing timestamp
     - originalInvoiceNumber: Original invoice number for chain queries
     """
+
     invoice_issue_date: Optional[DateRange] = None
     ins_date: Optional[DateTimeRange] = None
     original_invoice_number: Optional[OriginalInvoiceNumber] = None
@@ -192,6 +212,7 @@ class MandatoryQueryParams:
 @dataclass
 class AdditionalQueryParams:
     """Additional query parameters according to API documentation."""
+
     tax_number: Optional[str] = None  # 8 digit tax number
     group_member_tax_number: Optional[str] = None  # 8 digit group member tax number
     name: Optional[str] = None  # Supplier/customer name (min 5 chars)
@@ -205,6 +226,7 @@ class AdditionalQueryParams:
 @dataclass
 class RelationalQueryParam:
     """Single relational query parameter structure."""
+
     query_operator: QueryOperator
     query_value: str  # Value depends on the field type (date, decimal, etc.)
 
@@ -212,6 +234,7 @@ class RelationalQueryParam:
 @dataclass
 class RelationalQueryParams:
     """Relational query parameters according to API documentation."""
+
     invoice_delivery: Optional[RelationalQueryParam] = None
     payment_date: Optional[RelationalQueryParam] = None
     invoice_net_amount: Optional[RelationalQueryParam] = None
@@ -223,6 +246,7 @@ class RelationalQueryParams:
 @dataclass
 class TransactionQueryParams:
     """Transaction query parameters according to API documentation."""
+
     transaction_id: Optional[str] = None  # Pattern: [+a-zA-Z0-9_]{1,30}
     index: Optional[int] = None  # Range: 1-100
     invoice_operation: Optional[InvoiceOperation] = None
@@ -231,6 +255,7 @@ class TransactionQueryParams:
 @dataclass
 class InvoiceQueryParams:
     """Invoice query parameters structure according to API documentation."""
+
     mandatory_query_params: MandatoryQueryParams
     additional_query_params: Optional[AdditionalQueryParams] = None
     relational_query_params: Optional[RelationalQueryParams] = None
@@ -240,6 +265,7 @@ class InvoiceQueryParams:
 @dataclass
 class QueryInvoiceDigestRequest:
     """Query invoice digest request according to API documentation."""
+
     page: int  # minInclusive = 1
     invoice_direction: InvoiceDirection
     invoice_query_params: InvoiceQueryParams
@@ -248,6 +274,7 @@ class QueryInvoiceDigestRequest:
 @dataclass
 class QueryInvoiceCheckRequest:
     """Query invoice check request according to API documentation."""
+
     invoice_number: str
     invoice_direction: InvoiceDirection
     batch_index: Optional[int] = None  # minInclusive = 1
@@ -257,6 +284,7 @@ class QueryInvoiceCheckRequest:
 @dataclass
 class QueryInvoiceDataRequest:
     """Query invoice data request according to API documentation."""
+
     invoice_number: str
     invoice_direction: InvoiceDirection
     batch_index: Optional[int] = None  # minInclusive = 1
@@ -266,6 +294,7 @@ class QueryInvoiceDataRequest:
 @dataclass
 class QueryInvoiceChainDigestRequest:
     """Query invoice chain digest request according to API documentation."""
+
     page: int  # minInclusive = 1
     invoice_number: str
     invoice_direction: InvoiceDirection
@@ -275,6 +304,7 @@ class QueryInvoiceChainDigestRequest:
 @dataclass
 class ErrorInfo:
     """Error information structure."""
+
     error_code: str
     message: str
     timestamp: datetime
@@ -283,6 +313,7 @@ class ErrorInfo:
 @dataclass
 class ApiResponse:
     """Generic API response structure."""
+
     success: bool
     data: Optional[Any] = None
     error: Optional[ErrorInfo] = None
@@ -291,9 +322,11 @@ class ApiResponse:
 
 # API-compliant response types according to API documentation
 
+
 @dataclass
 class SoftwareType:
     """Software type according to API documentation."""
+
     software_id: str  # 18 character ID [0-9A-Z\-]{18}
     software_name: str
     software_operation: str  # LOCAL_SOFTWARE, ONLINE_SERVICE
@@ -307,6 +340,7 @@ class SoftwareType:
 @dataclass
 class BasicHeaderType:
     """Basic header type for API responses."""
+
     request_id: str
     timestamp: datetime
     request_version: str
@@ -316,6 +350,7 @@ class BasicHeaderType:
 @dataclass
 class NotificationType:
     """Notification type for API responses."""
+
     notification_code: str
     notification_text: str
 
@@ -323,6 +358,7 @@ class NotificationType:
 @dataclass
 class BasicResultType:
     """Basic result type according to API documentation."""
+
     func_code: str  # OK, ERROR
     error_code: Optional[str] = None
     message: Optional[str] = None
@@ -332,6 +368,7 @@ class BasicResultType:
 @dataclass
 class BasicOnlineInvoiceResponseType:
     """Basic online invoice response type according to API documentation."""
+
     header: BasicHeaderType
     result: BasicResultType
     software: Optional[SoftwareType] = None
@@ -340,11 +377,12 @@ class BasicOnlineInvoiceResponseType:
 @dataclass
 class InvoiceDigestType:
     """Invoice digest type according to API documentation."""
+
     invoice_number: str
     invoice_direction: InvoiceDirection
     batch_index: Optional[int] = None
     invoice_operation: Optional[str] = None  # CREATE, MODIFY, STORNO
-    invoice_category: Optional[str] = None   # NORMAL, SIMPLIFIED, AGGREGATE
+    invoice_category: Optional[str] = None  # NORMAL, SIMPLIFIED, AGGREGATE
     invoice_issue_date: Optional[datetime] = None
     supplier_tax_number: Optional[str] = None
     supplier_name: Optional[str] = None
@@ -374,6 +412,7 @@ class InvoiceDigestType:
 @dataclass
 class QueryInvoiceDigestResponseType(BasicOnlineInvoiceResponseType):
     """Query invoice digest response type according to API documentation."""
+
     current_page: Optional[int] = None
     available_page: Optional[int] = None
     available_count: Optional[int] = None
@@ -383,6 +422,7 @@ class QueryInvoiceDigestResponseType(BasicOnlineInvoiceResponseType):
 @dataclass
 class InvoiceCheckResultType:
     """Invoice check result type according to API documentation."""
+
     invoice_number: str
     batch_index: Optional[int]
     invoice_direction: InvoiceDirection
@@ -392,12 +432,14 @@ class InvoiceCheckResultType:
 @dataclass
 class QueryInvoiceCheckResponseType(BasicOnlineInvoiceResponseType):
     """Query invoice check response type according to API documentation."""
+
     query_results: Optional[List[InvoiceCheckResultType]] = None
 
 
 @dataclass
 class InvoiceDataType:
     """Invoice data type according to API documentation."""
+
     invoice_number: str
     invoice_direction: InvoiceDirection
     supplier_info: SupplierInfo
@@ -407,15 +449,17 @@ class InvoiceDataType:
     # Additional fields as needed
 
 
-@dataclass  
+@dataclass
 class QueryInvoiceDataResponseType(BasicOnlineInvoiceResponseType):
     """Query invoice data response type according to API documentation."""
+
     invoice_data: Optional[InvoiceDataType] = None
 
 
 @dataclass
 class InvoiceChainDigestType:
     """Invoice chain digest type according to API documentation."""
+
     invoice_chain_query: str
     invoice_chain_element: List[InvoiceDigestType]
 
@@ -423,4 +467,5 @@ class InvoiceChainDigestType:
 @dataclass
 class QueryInvoiceChainDigestResponseType(BasicOnlineInvoiceResponseType):
     """Query invoice chain digest response type according to API documentation."""
+
     invoice_chain_digest_result: Optional[InvoiceChainDigestType] = None

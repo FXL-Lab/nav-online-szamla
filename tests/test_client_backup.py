@@ -1,77 +1,77 @@
 """
 Tests for the main NAV client functionality.
 """
+
 import pytest
 import requests_mock
 from datetime import datetime
 
 from nav_online_szamla.client import NavOnlineInvoiceClient
-from nav_online_szamla.models import (
-    NavCredentials, InvoiceDirection, InvoiceDigest
-)
+from nav_online_szamla.models import NavCredentials, InvoiceDirection, InvoiceDigest
 from nav_online_szamla.exceptions import (
-    NavValidationException, NavApiException, NavInvoiceNotFoundException
+    NavValidationException,
+    NavApiException,
+    NavInvoiceNotFoundException,
 )
 
 
 class TestNavOnlineInvoiceClient:
     """Test cases for the NAV Online Invoice client."""
-    
+
     def test_client_initialization_default(self):
         """Test client initialization with default settings."""
         client = NavOnlineInvoiceClient()
-        
-        assert client.base_url == "https://api.onlineszamla.nav.gov.hu/invoiceService/v3/"
+
+        assert (
+            client.base_url == "https://api.onlineszamla.nav.gov.hu/invoiceService/v3/"
+        )
         assert client.http_client is not None
-    
+
     def test_client_initialization_custom_url(self):
         """Test client initialization with custom base URL."""
         custom_url = "https://test.api.onlineszamla.nav.gov.hu"
         client = NavOnlineInvoiceClient(base_url=custom_url)
-        
+
         assert client.base_url == custom_url
-    
+
     def test_client_initialization_custom_timeout(self):
         """Test client initialization with custom timeout."""
         client = NavOnlineInvoiceClient(timeout=60)
-        
+
         # Timeout should be set properly for the http_client
         assert client.http_client is not None
-    
+
     def test_token_exchange_success(self, sample_credentials):
         """Test successful token exchange."""
         client = NavOnlineInvoiceClient()
-        
+
         with requests_mock.Mocker() as m:
             m.post(
                 f"{client.base_url}tokenExchange",
                 json={
                     "result": {
                         "funcCode": "OK",
-                        "encodedExchangeToken": "encoded_token_123"
+                        "encodedExchangeToken": "encoded_token_123",
                     }
-                }
+                },
             )
-            
+
             token = client.get_token(sample_credentials)
             assert token == "encoded_token_123"
-    
+
     def test_query_invoice_digest_success(self, sample_credentials):
         """Test successful invoice digest query."""
         client = NavOnlineInvoiceClient()
-        
+
         with requests_mock.Mocker() as m:
             # Mock token exchange
             m.post(
                 f"{client.base_url}tokenExchange",
                 json={
-                    "result": {
-                        "funcCode": "OK",
-                        "encodedExchangeToken": "token_123"
-                    }
-                }
+                    "result": {"funcCode": "OK", "encodedExchangeToken": "token_123"}
+                },
             )
-            
+
             # Mock query invoice digest
             m.post(
                 f"{client.base_url}queryInvoiceDigest",
@@ -100,14 +100,17 @@ class TestNavOnlineInvoiceClient:
                             <originalRequestVersion>3.0</originalRequestVersion>
                         </invoiceDigest>
                     </invoiceDigestResult>
-                </QueryInvoiceDigestResponse>"""
+                </QueryInvoiceDigestResponse>""",
             )
-            
+
             from nav_online_szamla.models import (
-                QueryInvoiceDigestRequest, InvoiceQueryParams, MandatoryQueryParams, 
-                InvoiceDirection, DateTimeRange
+                QueryInvoiceDigestRequest,
+                InvoiceQueryParams,
+                MandatoryQueryParams,
+                InvoiceDirection,
+                DateTimeRange,
             )
-            
+
             request = QueryInvoiceDigestRequest(
                 page=1,
                 invoice_direction=InvoiceDirection.OUTBOUND,
@@ -115,35 +118,35 @@ class TestNavOnlineInvoiceClient:
                     mandatory_query_params=MandatoryQueryParams(
                         ins_date=DateTimeRange(
                             date_time_from=datetime(2023, 1, 1),
-                            date_time_to=datetime(2023, 1, 31)
+                            date_time_to=datetime(2023, 1, 31),
                         )
                     )
-                )
+                ),
             )
-            
+
             response = client.query_invoice_digest(sample_credentials, request)
-            
+
             assert response.available_count == 1
             assert len(response.invoice_digests) == 1
             assert response.invoice_digests[0].invoice_number == "TEST001"
-            assert response.invoice_digests[0].invoice_direction == InvoiceDirection.OUTBOUND
-    
+            assert (
+                response.invoice_digests[0].invoice_direction
+                == InvoiceDirection.OUTBOUND
+            )
+
     def test_query_invoice_digest_success(self, sample_credentials):
         """Test successful invoice digest query."""
         client = NavOnlineInvoiceClient()
-        
+
         with requests_mock.Mocker() as m:
             # Mock token exchange
             m.post(
                 f"{client.base_url}tokenExchange",
                 json={
-                    "result": {
-                        "funcCode": "OK",
-                        "encodedExchangeToken": "token_123"
-                    }
-                }
+                    "result": {"funcCode": "OK", "encodedExchangeToken": "token_123"}
+                },
             )
-            
+
             # Mock query invoice digest
             m.post(
                 f"{client.base_url}queryInvoiceDigest",
@@ -172,14 +175,17 @@ class TestNavOnlineInvoiceClient:
                             <originalRequestVersion>3.0</originalRequestVersion>
                         </invoiceDigest>
                     </invoiceDigestResult>
-                </QueryInvoiceDigestResponse>"""
+                </QueryInvoiceDigestResponse>""",
             )
-            
+
             from nav_online_szamla.models import (
-                QueryInvoiceDigestRequest, InvoiceQueryParams, MandatoryQueryParams, 
-                InvoiceDirection, DateTimeRange
+                QueryInvoiceDigestRequest,
+                InvoiceQueryParams,
+                MandatoryQueryParams,
+                InvoiceDirection,
+                DateTimeRange,
             )
-            
+
             request = QueryInvoiceDigestRequest(
                 page=1,
                 invoice_direction=InvoiceDirection.OUTBOUND,
@@ -187,15 +193,18 @@ class TestNavOnlineInvoiceClient:
                     mandatory_query_params=MandatoryQueryParams(
                         ins_date=DateTimeRange(
                             date_time_from=datetime(2023, 1, 1),
-                            date_time_to=datetime(2023, 1, 31)
+                            date_time_to=datetime(2023, 1, 31),
                         )
                     )
-                )
+                ),
             )
-            
+
             response = client.query_invoice_digest(sample_credentials, request)
-            
+
             assert response.available_count == 1
             assert len(response.invoice_digests) == 1
             assert response.invoice_digests[0].invoice_number == "TEST001"
-            assert response.invoice_digests[0].invoice_direction == InvoiceDirection.OUTBOUND
+            assert (
+                response.invoice_digests[0].invoice_direction
+                == InvoiceDirection.OUTBOUND
+            )

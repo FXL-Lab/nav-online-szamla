@@ -1,6 +1,7 @@
 """
 Test configuration and fixtures for the NAV Online Számla tests.
 """
+
 import pytest
 from datetime import datetime
 
@@ -14,7 +15,7 @@ def sample_credentials():
         login="test_user",
         password="test_password",
         signer_key="test_signer_key",
-        tax_number="12345678"
+        tax_number="12345678",
     )
 
 

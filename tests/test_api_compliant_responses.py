@@ -1,79 +1,86 @@
 """
 Tests for API-compliant response types.
 """
+
 import pytest
 from datetime import datetime
 
 from nav_online_szamla.models import (
     # Response types
-    BasicHeaderType, BasicResultType, NotificationType, SoftwareType,
-    BasicOnlineInvoiceResponseType, QueryInvoiceDigestResponseType,
-    QueryInvoiceCheckResponseType, QueryInvoiceDataResponseType,
-    QueryInvoiceChainDigestResponseType, InvoiceDigestType,
-    InvoiceCheckResultType, InvoiceDataType, InvoiceChainDigestType,
+    BasicHeaderType,
+    BasicResultType,
+    NotificationType,
+    SoftwareType,
+    BasicOnlineInvoiceResponseType,
+    QueryInvoiceDigestResponseType,
+    QueryInvoiceCheckResponseType,
+    QueryInvoiceDataResponseType,
+    QueryInvoiceChainDigestResponseType,
+    InvoiceDigestType,
+    InvoiceCheckResultType,
+    InvoiceDataType,
+    InvoiceChainDigestType,
     # Dependencies
-    InvoiceDirection, SupplierInfo, CustomerInfo
+    InvoiceDirection,
+    SupplierInfo,
+    CustomerInfo,
 )
 
 
 class TestBasicTypes:
     """Test basic API response types."""
-    
+
     def test_basic_header_type(self):
         """Test BasicHeaderType creation."""
         header = BasicHeaderType(
             request_id="test-123",
             timestamp=datetime(2024, 1, 1, 12, 0, 0),
             request_version="3.0",
-            header_version="1.0"
+            header_version="1.0",
         )
-        
+
         assert header.request_id == "test-123"
         assert header.timestamp == datetime(2024, 1, 1, 12, 0, 0)
         assert header.request_version == "3.0"
         assert header.header_version == "1.0"
-    
+
     def test_notification_type(self):
         """Test NotificationType creation."""
         notification = NotificationType(
-            notification_code="INFO001",
-            notification_text="Information message"
+            notification_code="INFO001", notification_text="Information message"
         )
-        
+
         assert notification.notification_code == "INFO001"
         assert notification.notification_text == "Information message"
-    
+
     def test_basic_result_type_success(self):
         """Test BasicResultType for successful response."""
-        result = BasicResultType(
-            func_code="OK"
-        )
-        
+        result = BasicResultType(func_code="OK")
+
         assert result.func_code == "OK"
         assert result.error_code is None
         assert result.message is None
         assert result.notifications is None
-    
+
     def test_basic_result_type_error(self):
         """Test BasicResultType for error response."""
         notification = NotificationType(
-            notification_code="WARN001",
-            notification_text="Warning message"
+            notification_code="WARN001", notification_text="Warning message"
         )
-        
+
         result = BasicResultType(
             func_code="ERROR",
             error_code="INVALID_CREDENTIALS",
             message="Authentication failed",
-            notifications=[notification]
+            notifications=[notification],
         )
-        
+
         assert result.func_code == "ERROR"
         assert result.error_code == "INVALID_CREDENTIALS"
         assert result.message == "Authentication failed"
         assert len(result.notifications) == 1
         assert result.notifications[0].notification_code == "WARN001"
-    
+
     def test_software_type(self):
         """Test SoftwareType creation."""
         software = SoftwareType(
@@ -84,9 +91,9 @@ class TestBasicTypes:
             software_dev_name="FXL Technology",
             software_dev_contact="info@fxltech.com",
             software_dev_country_code="HU",
-            software_dev_tax_number="12345678"
+            software_dev_tax_number="12345678",
         )
-        
+
         assert software.software_id == "NAV-ONLINE-SZAMLA-01"
         assert software.software_name == "NAV Online Számla"
         assert software.software_operation == "LOCAL_SOFTWARE"
@@ -99,33 +106,31 @@ class TestBasicTypes:
 
 class TestBasicOnlineInvoiceResponseType:
     """Test BasicOnlineInvoiceResponseType."""
-    
+
     def test_basic_response_creation(self):
         """Test basic response creation."""
         header = BasicHeaderType(
             request_id="test-123",
             timestamp=datetime(2024, 1, 1, 12, 0, 0),
             request_version="3.0",
-            header_version="1.0"
+            header_version="1.0",
         )
-        
+
         result = BasicResultType(func_code="OK")
-        
+
         software = SoftwareType(
             software_id="NAV-ONLINE-SZAMLA-01",
             software_name="NAV Online Számla",
             software_operation="LOCAL_SOFTWARE",
             software_main_version="1.0.0",
             software_dev_name="FXL Technology",
-            software_dev_contact="info@fxltech.com"
+            software_dev_contact="info@fxltech.com",
         )
-        
+
         response = BasicOnlineInvoiceResponseType(
-            header=header,
-            result=result,
-            software=software
+            header=header, result=result, software=software
         )
-        
+
         assert response.header.request_id == "test-123"
         assert response.result.func_code == "OK"
         assert response.software.software_name == "NAV Online Számla"
@@ -133,7 +138,7 @@ class TestBasicOnlineInvoiceResponseType:
 
 class TestInvoiceDigestType:
     """Test InvoiceDigestType."""
-    
+
     def test_invoice_digest_minimal(self):
         """Test minimal invoice digest creation."""
         digest = InvoiceDigestType(
@@ -145,9 +150,9 @@ class TestInvoiceDigestType:
             supplier_tax_number="12345678",
             supplier_name="Test Supplier",
             ins_date=datetime(2024, 1, 1, 10, 0, 0),
-            batch_index=1
+            batch_index=1,
         )
-        
+
         assert digest.invoice_number == "TEST001"
         assert digest.batch_index == 1
         assert digest.invoice_operation == "CREATE"
@@ -155,7 +160,7 @@ class TestInvoiceDigestType:
         assert digest.supplier_tax_number == "12345678"
         assert digest.supplier_name == "Test Supplier"
         assert digest.ins_date == datetime(2024, 1, 1, 10, 0, 0)
-    
+
     def test_invoice_digest_full(self):
         """Test full invoice digest creation."""
         digest = InvoiceDigestType(
@@ -186,9 +191,9 @@ class TestInvoiceDigestType:
             original_invoice_number="ORIG001",
             modification_index=1,
             ins_date=datetime(2024, 1, 1, 10, 0, 0),
-            completeness_indicator=True
+            completeness_indicator=True,
         )
-        
+
         assert digest.invoice_number == "TEST001"
         assert digest.customer_name == "Test Customer"
         assert digest.payment_method == "CASH"
@@ -200,18 +205,18 @@ class TestInvoiceDigestType:
 
 class TestQueryInvoiceDigestResponseType:
     """Test QueryInvoiceDigestResponseType."""
-    
+
     def test_query_digest_response(self):
         """Test query digest response creation."""
         header = BasicHeaderType(
             request_id="test-123",
             timestamp=datetime(2024, 1, 1, 12, 0, 0),
             request_version="3.0",
-            header_version="1.0"
+            header_version="1.0",
         )
-        
+
         result = BasicResultType(func_code="OK")
-        
+
         digest = InvoiceDigestType(
             invoice_number="TEST001",
             invoice_direction=InvoiceDirection.OUTBOUND,
@@ -221,17 +226,17 @@ class TestQueryInvoiceDigestResponseType:
             supplier_tax_number="12345678",
             supplier_name="Test Supplier",
             ins_date=datetime(2024, 1, 1, 10, 0, 0),
-            batch_index=1
+            batch_index=1,
         )
-        
+
         response = QueryInvoiceDigestResponseType(
             header=header,
             result=result,
             current_page=1,
             available_page=5,
-            invoice_digests=[digest]
+            invoice_digests=[digest],
         )
-        
+
         assert response.header.request_id == "test-123"
         assert response.result.func_code == "OK"
         assert response.current_page == 1
@@ -242,16 +247,16 @@ class TestQueryInvoiceDigestResponseType:
 
 class TestInvoiceCheckResultType:
     """Test InvoiceCheckResultType."""
-    
+
     def test_invoice_check_result(self):
         """Test invoice check result creation."""
         result = InvoiceCheckResultType(
             invoice_number="TEST001",
             batch_index=1,
             invoice_direction=InvoiceDirection.OUTBOUND,
-            query_result_code="FOUND"
+            query_result_code="FOUND",
         )
-        
+
         assert result.invoice_number == "TEST001"
         assert result.batch_index == 1
         assert result.invoice_direction == InvoiceDirection.OUTBOUND
@@ -260,31 +265,29 @@ class TestInvoiceCheckResultType:
 
 class TestQueryInvoiceCheckResponseType:
     """Test QueryInvoiceCheckResponseType."""
-    
+
     def test_query_check_response(self):
         """Test query check response creation."""
         header = BasicHeaderType(
             request_id="test-123",
             timestamp=datetime(2024, 1, 1, 12, 0, 0),
             request_version="3.0",
-            header_version="1.0"
+            header_version="1.0",
         )
-        
+
         result = BasicResultType(func_code="OK")
-        
+
         check_result = InvoiceCheckResultType(
             invoice_number="TEST001",
             batch_index=1,
             invoice_direction=InvoiceDirection.OUTBOUND,
-            query_result_code="FOUND"
+            query_result_code="FOUND",
         )
-        
+
         response = QueryInvoiceCheckResponseType(
-            header=header,
-            result=result,
-            query_results=[check_result]
+            header=header, result=result, query_results=[check_result]
         )
-        
+
         assert response.header.request_id == "test-123"
         assert response.result.func_code == "OK"
         assert len(response.query_results) == 1
@@ -293,46 +296,41 @@ class TestQueryInvoiceCheckResponseType:
 
 class TestInvoiceDataType:
     """Test InvoiceDataType."""
-    
+
     def test_invoice_data_creation(self):
         """Test invoice data creation."""
         from nav_online_szamla.models import TaxNumber, Address
-        
+
         address = Address(
             country_code="HU",
             postal_code="1234",
             city="Budapest",
             street_name="Test utca",
             public_place_category="utca",
-            number="1"
+            number="1",
         )
-        
+
         supplier_info = SupplierInfo(
             tax_number=TaxNumber(taxpayer_id="12345678"),
             name="Test Supplier",
-            address=address
+            address=address,
         )
-        
-        customer_info = CustomerInfo(
-            name="Test Customer"
-        )
-        
+
+        customer_info = CustomerInfo(name="Test Customer")
+
         invoice_data = InvoiceDataType(
             invoice_number="TEST001",
             invoice_direction=InvoiceDirection.OUTBOUND,
             supplier_info=supplier_info,
             customer_info=customer_info,
-            invoice_main={
-                "invoiceCategory": "NORMAL",
-                "currencyCode": "HUF"
-            },
+            invoice_main={"invoiceCategory": "NORMAL", "currencyCode": "HUF"},
             invoice_summary={
                 "invoiceNetAmount": 10000.0,
                 "invoiceVatAmount": 2700.0,
-                "invoiceGrossAmount": 12700.0
-            }
+                "invoiceGrossAmount": 12700.0,
+            },
         )
-        
+
         assert invoice_data.invoice_number == "TEST001"
         assert invoice_data.invoice_direction == InvoiceDirection.OUTBOUND
         assert invoice_data.supplier_info.name == "Test Supplier"
