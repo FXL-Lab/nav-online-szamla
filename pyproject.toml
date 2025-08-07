@@ -4,7 +4,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "nav-online-szamla"
-version = "0.0.4"
+version = "0.0.5"
 description = "NAV Online Számla"
 authors = ["Gergo Emmert <gergo.emmert@fxltech.com>"]
 readme = "README.md"
@@ -17,6 +17,10 @@ classifiers = [
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Topic :: Office/Business :: Financial :: Accounting",
 ]
@@ -24,7 +28,7 @@ package-mode = true
 packages = [{include = "nav_online_szamla"}]
 
 [tool.poetry.dependencies]
-python = "^3.13.1"
+python = ">=3.9,<4.0"
 requests = "^2.31.0"
 pysimplesoap = "^1.16.0"
 pandas = "^2.1.0"
