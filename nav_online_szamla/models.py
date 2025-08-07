@@ -79,6 +79,35 @@ class CustomerVatStatus(Enum):
     OTHER = "OTHER"  # Egyéb
 
 
+class LineNatureIndicator(Enum):
+    """Line nature indicator enumeration."""
+
+    PRODUCT = "PRODUCT"
+    SERVICE = "SERVICE"
+    OTHER = "OTHER"
+
+
+class UnitOfMeasure(Enum):
+    """Unit of measure enumeration."""
+
+    PIECE = "PIECE"
+    KILOGRAM = "KILOGRAM"
+    TON = "TON"
+    KWH = "KWH"
+    DAY = "DAY"
+    HOUR = "HOUR"
+    MINUTE = "MINUTE"
+    MONTH = "MONTH"
+    LITER = "LITER"
+    KILOMETER = "KILOMETER"
+    CUBIC_METER = "CUBIC_METER"
+    METER = "METER"
+    LINEAR_METER = "LINEAR_METER"
+    CARTON = "CARTON"
+    PACK = "PACK"
+    OWN = "OWN"
+
+
 @dataclass
 class TaxNumber:
     """Tax number data structure."""
@@ -108,6 +137,11 @@ class SupplierInfo:
     tax_number: TaxNumber
     name: str
     address: Address
+    group_member_tax_number: Optional[TaxNumber] = None
+    community_vat_number: Optional[str] = None
+    bank_account_number: Optional[str] = None
+    individual_exemption: Optional[bool] = None
+    excise_licence_num: Optional[str] = None
 
 
 @dataclass
@@ -120,6 +154,260 @@ class CustomerInfo:
     address: Optional[Address] = None
     community_vat_number: Optional[str] = None
     third_country_tax_number: Optional[str] = None
+    bank_account_number: Optional[str] = None
+
+
+@dataclass
+class FiscalRepresentativeInfo:
+    """Fiscal representative information data structure."""
+
+    tax_number: TaxNumber
+    name: str
+    address: Address
+    bank_account_number: Optional[str] = None
+
+
+@dataclass
+class AdditionalData:
+    """Additional data structure for non-standardized fields."""
+
+    data_name: str  # Unique identifier like A00001_RENDELES_SZAM
+    data_description: str  # Description of the data field
+    data_value: str  # The actual data value
+
+
+@dataclass
+class ConventionalInvoiceInfo:
+    """Conventional invoice information structure."""
+
+    order_numbers: Optional[List[str]] = None
+    delivery_notes: Optional[List[str]] = None
+    shipping_dates: Optional[List[str]] = None
+    contract_numbers: Optional[List[str]] = None
+
+
+@dataclass
+class VatRate:
+    """VAT rate data structure."""
+
+    vat_percentage: Optional[float] = None
+    vat_exemption: Optional[str] = None
+    vat_out_of_scope: Optional[str] = None
+    vat_domestic_reverse_charge: Optional[bool] = None
+
+
+@dataclass
+class LineAmountsNormal:
+    """Line amounts for normal invoices."""
+
+    line_net_amount: float
+    line_net_amount_huf: float
+    line_vat_rate: VatRate
+    line_vat_amount: Optional[float] = None
+    line_vat_amount_huf: Optional[float] = None
+    line_gross_amount: Optional[float] = None
+    line_gross_amount_huf: Optional[float] = None
+
+
+@dataclass
+class LineAmountsSimplified:
+    """Line amounts for simplified invoices."""
+
+    line_vat_rate: VatRate
+    line_gross_amount: float
+    line_gross_amount_huf: float
+
+
+@dataclass
+class InvoiceLine:
+    """Invoice line item structure."""
+
+    line_number: int
+    line_expression_indicator: bool
+    line_nature_indicator: Optional[LineNatureIndicator] = None
+    line_description: Optional[str] = None
+    quantity: Optional[float] = None
+    unit_of_measure: Optional[UnitOfMeasure] = None
+    unit_price: Optional[float] = None
+    line_amounts_normal: Optional[LineAmountsNormal] = None
+    line_amounts_simplified: Optional[LineAmountsSimplified] = None
+
+
+@dataclass
+class InvoiceLines:
+    """Invoice lines structure."""
+
+    lines: List[InvoiceLine]
+
+
+@dataclass
+class SummaryByVatRate:
+    """Summary by VAT rate structure."""
+
+    vat_rate: VatRate
+    vat_rate_net_amount: float
+    vat_rate_net_amount_huf: float
+    vat_rate_vat_amount: float
+    vat_rate_vat_amount_huf: float
+
+
+@dataclass
+class SummaryNormal:
+    """Summary for normal invoices."""
+
+    summary_by_vat_rate: List[SummaryByVatRate]
+    invoice_net_amount: float
+    invoice_net_amount_huf: float
+    invoice_vat_amount: float
+    invoice_vat_amount_huf: float
+
+
+@dataclass
+class InvoiceSummary:
+    """Invoice summary structure."""
+
+    invoice_gross_amount: Optional[float] = None
+    invoice_gross_amount_huf: Optional[float] = None
+    summary_normal: Optional[SummaryNormal] = None
+
+
+@dataclass
+class VatRate:
+    """VAT rate data structure."""
+
+    vat_percentage: Optional[float] = None  # VAT percentage (e.g., 27.0)
+    vat_exemption: Optional[str] = None  # VAT exemption code
+    vat_out_of_scope: Optional[str] = None  # VAT out of scope code
+    vat_domestic_reverse_charge: Optional[bool] = None  # Domestic reverse charge
+
+
+@dataclass
+class LineAmountsNormal:
+    """Line amounts for normal (non-simplified) invoices."""
+
+    line_net_amount: float  # Net amount in invoice currency
+    line_net_amount_huf: float  # Net amount in HUF
+    line_vat_rate: VatRate  # VAT rate data
+    line_vat_amount: Optional[float] = None  # VAT amount in invoice currency
+    line_vat_amount_huf: Optional[float] = None  # VAT amount in HUF
+    line_gross_amount: Optional[float] = None  # Gross amount in invoice currency
+    line_gross_amount_huf: Optional[float] = None  # Gross amount in HUF
+
+
+@dataclass
+class LineAmountsSimplified:
+    """Line amounts for simplified invoices."""
+
+    line_vat_rate: VatRate  # VAT rate data
+    line_gross_amount: float  # Gross amount in invoice currency
+    line_gross_amount_huf: float  # Gross amount in HUF
+
+
+@dataclass
+class ProductCode:
+    """Product code structure."""
+
+    product_code_category: str  # Category of the product code
+    product_code_value: Optional[str] = None  # Standard product code value
+    product_code_own_value: Optional[str] = None  # Own product code value
+
+
+@dataclass
+class DiscountData:
+    """Discount data structure."""
+
+    discount_description: str  # Description of the discount
+    discount_value: Optional[float] = None  # Discount value
+    discount_rate: Optional[float] = None  # Discount rate as percentage
+
+
+@dataclass
+class InvoiceLine:
+    """Invoice line item structure."""
+
+    line_number: int  # Line number (starting from 1)
+    line_expression_indicator: bool  # True if quantity can be expressed in natural units
+    
+    # Product/service description
+    line_nature_indicator: Optional[LineNatureIndicator] = None
+    line_description: Optional[str] = None
+    
+    # Quantity and pricing
+    quantity: Optional[float] = None
+    unit_of_measure: Optional[UnitOfMeasure] = None
+    unit_of_measure_own: Optional[str] = None  # Custom unit of measure
+    unit_price: Optional[float] = None  # Unit price in invoice currency
+    unit_price_huf: Optional[float] = None  # Unit price in HUF
+    
+    # Line amounts (one of these should be filled based on invoice type)
+    line_amounts_normal: Optional[LineAmountsNormal] = None
+    line_amounts_simplified: Optional[LineAmountsSimplified] = None
+    
+    # Additional line data
+    product_codes: Optional[List[ProductCode]] = None
+    line_discount_data: Optional[DiscountData] = None
+    intermediated_service: Optional[bool] = None
+    deposit_indicator: Optional[bool] = None
+    obligated_for_product_fee: Optional[bool] = None
+    gpc_excise: Optional[float] = None  # Gas, electricity, coal excise tax in HUF
+    neta_declaration: Optional[bool] = None
+    
+    # Structured additional data
+    conventional_line_info: Optional[ConventionalInvoiceInfo] = None
+    additional_line_data: Optional[List[AdditionalData]] = None
+
+
+@dataclass
+class InvoiceLines:
+    """Invoice lines structure."""
+
+    lines: List[InvoiceLine]  # List of invoice line items
+
+
+@dataclass
+class SummaryByVatRate:
+    """Summary by VAT rate structure."""
+
+    vat_rate: VatRate  # VAT rate or exemption
+    vat_rate_net_amount: float  # Net amount for this VAT rate in invoice currency
+    vat_rate_net_amount_huf: float  # Net amount for this VAT rate in HUF
+    vat_rate_vat_amount: float  # VAT amount for this VAT rate in invoice currency
+    vat_rate_vat_amount_huf: float  # VAT amount for this VAT rate in HUF
+    vat_rate_gross_amount: Optional[float] = None  # Gross amount in invoice currency
+    vat_rate_gross_amount_huf: Optional[float] = None  # Gross amount in HUF
+
+
+@dataclass
+class SummaryNormal:
+    """Summary for normal (non-simplified) invoices."""
+
+    summary_by_vat_rate: List[SummaryByVatRate]  # Breakdown by VAT rates
+    invoice_net_amount: float  # Total net amount in invoice currency
+    invoice_net_amount_huf: float  # Total net amount in HUF
+    invoice_vat_amount: float  # Total VAT amount in invoice currency
+    invoice_vat_amount_huf: float  # Total VAT amount in HUF
+
+
+@dataclass
+class SummarySimplified:
+    """Summary for simplified invoices."""
+
+    vat_rate: VatRate  # VAT rate or exemption
+    vat_content_gross_amount: float  # Gross amount in invoice currency
+    vat_content_gross_amount_huf: float  # Gross amount in HUF
+
+
+@dataclass
+class InvoiceSummary:
+    """Invoice summary structure."""
+
+    # Gross amounts (always present)
+    invoice_gross_amount: Optional[float] = None  # Total gross amount in invoice currency
+    invoice_gross_amount_huf: Optional[float] = None  # Total gross amount in HUF
+    
+    # Type-specific summaries (one of these should be filled)
+    summary_normal: Optional[SummaryNormal] = None  # For normal and aggregate invoices
+    summary_simplified: Optional[SummarySimplified] = None  # For simplified invoices
 
 
 @dataclass
@@ -144,21 +432,62 @@ class InvoiceDigest:
 
 @dataclass
 class InvoiceDetail:
-    """Detailed invoice data structure."""
+    """Detailed invoice data structure according to API documentation."""
 
+    # Core invoice information
     invoice_number: str
     issue_date: datetime
-    completion_date: Optional[datetime]
-    currency_code: str
-    exchange_rate: Optional[float]
-    supplier_info: SupplierInfo
-    customer_info: CustomerInfo
-    invoice_net_amount: float
-    invoice_vat_amount: float
-    invoice_gross_amount: float
-    source: str
-    # Additional fields can be added as needed
-    additional_data: Dict[str, Any]
+    completion_date: Optional[datetime] = None
+    completeness_indicator: Optional[bool] = None
+    
+    # Invoice classification and delivery
+    invoice_category: Optional[InvoiceCategory] = None
+    invoice_delivery_date: Optional[datetime] = None
+    invoice_delivery_period_start: Optional[datetime] = None
+    invoice_delivery_period_end: Optional[datetime] = None
+    invoice_accounting_delivery_date: Optional[datetime] = None
+    
+    # Invoice indicators and flags
+    periodical_settlement: Optional[bool] = None
+    small_business_indicator: Optional[bool] = None
+    utility_settlement_indicator: Optional[bool] = None
+    self_billing_indicator: Optional[bool] = None
+    cash_accounting_indicator: Optional[bool] = None
+    
+    # Currency and exchange
+    currency_code: str = "HUF"
+    exchange_rate: Optional[float] = None
+    
+    # Payment information
+    payment_method: Optional[PaymentMethod] = None
+    payment_date: Optional[datetime] = None
+    
+    # Invoice appearance and source
+    invoice_appearance: Optional[InvoiceAppearance] = None
+    source: Optional[Source] = None
+    
+    # Party information
+    supplier_info: Optional[SupplierInfo] = None
+    customer_info: Optional[CustomerInfo] = None
+    fiscal_representative_info: Optional[FiscalRepresentativeInfo] = None
+    
+    # Financial amounts
+    invoice_net_amount: Optional[float] = None
+    invoice_vat_amount: Optional[float] = None
+    invoice_gross_amount: Optional[float] = None
+    invoice_net_amount_huf: Optional[float] = None
+    invoice_vat_amount_huf: Optional[float] = None
+    
+    # Additional structured data
+    conventional_invoice_info: Optional[ConventionalInvoiceInfo] = None
+    additional_invoice_data: Optional[List[AdditionalData]] = None
+    
+    # Complex invoice content (structured data)
+    invoice_lines: Optional[InvoiceLines] = None
+    invoice_summary: Optional[InvoiceSummary] = None
+    
+    # Legacy/compatibility field
+    additional_data: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -440,12 +769,27 @@ class QueryInvoiceCheckResponseType(BasicOnlineInvoiceResponseType):
 class InvoiceDataType:
     """Invoice data type according to API documentation."""
 
+    # Core identification
     invoice_number: str
+    invoice_issue_date: datetime
+    completeness_indicator: bool
+    
+    # Invoice direction and operation
     invoice_direction: InvoiceDirection
-    supplier_info: SupplierInfo
-    customer_info: CustomerInfo
-    invoice_main: Dict[str, Any]  # Complex structure - can be expanded
-    invoice_summary: Dict[str, Any]  # Complex structure - can be expanded
+    invoice_operation: Optional[InvoiceOperation] = None
+    
+    # Invoice reference (for modifications)
+    invoice_reference: Optional[Dict[str, Any]] = None  # InvoiceReferenceType
+    
+    # Main invoice content
+    invoice_head: Optional[Dict[str, Any]] = None  # InvoiceHeadType - contains supplier/customer info and invoice detail
+    invoice_lines: Optional[InvoiceLines] = None  # LinesType - structured line items
+    invoice_summary: Optional[InvoiceSummary] = None  # SummaryType - structured totals
+    
+    # Legacy compatibility fields
+    supplier_info: Optional[SupplierInfo] = None
+    customer_info: Optional[CustomerInfo] = None
+    invoice_main: Optional[Dict[str, Any]] = None  # Complex structure - can be expanded
     # Additional fields as needed
 
 

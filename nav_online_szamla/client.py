@@ -29,6 +29,14 @@ from .models import (
     TaxNumber,
     SupplierInfo,
     CustomerInfo,
+    Address,
+    InvoiceLines,
+    InvoiceSummary,
+    InvoiceLine,
+    VatRate,
+    LineAmountsNormal,
+    SummaryNormal,
+    SummaryByVatRate,
     QueryInvoiceDigestRequest,
     QueryInvoiceCheckRequest,
     QueryInvoiceDataRequest,
@@ -1223,6 +1231,12 @@ class NavOnlineInvoiceClient:
                         f"Could not parse completion date: {completion_date_str}"
                     )
 
+            # Parse completeness indicator
+            completeness_indicator = None
+            completeness_str = get_xml_element_value(invoice_dom, "completenessIndicator", "")
+            if completeness_str:
+                completeness_indicator = completeness_str.lower() == "true"
+
             # Parse currency and exchange rate
             currency_code = get_xml_element_value(invoice_dom, "currencyCode", "HUF")
             exchange_rate_str = get_xml_element_value(invoice_dom, "exchangeRate", "")
@@ -1235,6 +1249,75 @@ class NavOnlineInvoiceClient:
                         f"Could not parse exchange rate: {exchange_rate_str}"
                     )
 
+            # Parse invoice detail fields (paymentDate, paymentMethod, invoiceDeliveryDate, etc.)
+            payment_date = None
+            payment_method = None
+            invoice_delivery_date = None
+            invoice_category = None
+            invoice_appearance = None
+            periodical_settlement = None
+            small_business_indicator = None
+            
+            invoice_detail_elements = find_xml_elements_with_namespace_aware(
+                invoice_dom, "invoiceDetail"
+            )
+            if invoice_detail_elements:
+                detail_elem = invoice_detail_elements[0]
+                
+                # Parse payment date
+                payment_date_str = get_xml_element_value(detail_elem, "paymentDate", "")
+                if payment_date_str:
+                    try:
+                        payment_date = datetime.strptime(payment_date_str, "%Y-%m-%d")
+                    except ValueError:
+                        logger.warning(f"Could not parse payment date: {payment_date_str}")
+                
+                # Parse other invoice detail fields
+                payment_method_str = get_xml_element_value(detail_elem, "paymentMethod", "")
+                if payment_method_str:
+                    # Convert to enum if we have it defined
+                    from .models import PaymentMethod
+                    try:
+                        payment_method = PaymentMethod(payment_method_str)
+                    except ValueError:
+                        payment_method = payment_method_str
+                
+                # Parse delivery date
+                delivery_date_str = get_xml_element_value(detail_elem, "invoiceDeliveryDate", "")
+                if delivery_date_str:
+                    try:
+                        invoice_delivery_date = datetime.strptime(delivery_date_str, "%Y-%m-%d")
+                    except ValueError:
+                        logger.warning(f"Could not parse delivery date: {delivery_date_str}")
+                
+                # Parse invoice category  
+                invoice_category_str = get_xml_element_value(detail_elem, "invoiceCategory", "")
+                if invoice_category_str:
+                    from .models import InvoiceCategory
+                    try:
+                        invoice_category = InvoiceCategory(invoice_category_str)
+                    except ValueError:
+                        invoice_category = invoice_category_str
+                
+                # Parse invoice appearance
+                appearance_str = get_xml_element_value(detail_elem, "invoiceAppearance", "")
+                if appearance_str:
+                    from .models import InvoiceAppearance
+                    try:
+                        invoice_appearance = InvoiceAppearance(appearance_str)
+                    except ValueError:
+                        invoice_appearance = appearance_str
+                
+                # Parse periodical settlement
+                periodical_str = get_xml_element_value(detail_elem, "periodicalSettlement", "")
+                if periodical_str:
+                    periodical_settlement = periodical_str.lower() == "true"
+                
+                # Parse small business indicator
+                small_business_str = get_xml_element_value(detail_elem, "smallBusinessIndicator", "")
+                if small_business_str:
+                    small_business_indicator = small_business_str.lower() == "true"
+
             # Parse supplier information
             supplier_info = None
             supplier_elements = find_xml_elements_with_namespace_aware(
@@ -1243,6 +1326,12 @@ class NavOnlineInvoiceClient:
             if supplier_elements:
                 supplier_elem = supplier_elements[0]
                 supplier_name = get_xml_element_value(supplier_elem, "supplierName", "")
+                
+                # Parse community VAT number
+                community_vat_number = get_xml_element_value(supplier_elem, "communityVatNumber", "")
+                
+                # Parse bank account number
+                bank_account_number = get_xml_element_value(supplier_elem, "supplierBankAccountNumber", "")
 
                 # Parse supplier tax number
                 supplier_tax_number = None
@@ -1264,11 +1353,33 @@ class NavOnlineInvoiceClient:
                             county_code=county_code,
                         )
 
+                # Parse supplier address
+                supplier_address = None
+                address_elements = find_xml_elements_with_namespace_aware(
+                    supplier_elem, "supplierAddress"
+                )
+                if address_elements:
+                    detailed_addr_elements = find_xml_elements_with_namespace_aware(
+                        address_elements[0], "detailedAddress"
+                    )
+                    if detailed_addr_elements:
+                        addr_elem = detailed_addr_elements[0]
+                        supplier_address = Address(
+                            country_code=get_xml_element_value(addr_elem, "countryCode", ""),
+                            postal_code=get_xml_element_value(addr_elem, "postalCode", ""),
+                            city=get_xml_element_value(addr_elem, "city", ""),
+                            street_name=get_xml_element_value(addr_elem, "streetName", ""),
+                            public_place_category=get_xml_element_value(addr_elem, "publicPlaceCategory", ""),
+                            number=get_xml_element_value(addr_elem, "number", ""),
+                        )
+
                 if supplier_name or supplier_tax_number:
                     supplier_info = SupplierInfo(
                         name=supplier_name,
                         tax_number=supplier_tax_number,
-                        address=None,  # TODO: Parse address if needed
+                        address=supplier_address,
+                        community_vat_number=community_vat_number or None,
+                        bank_account_number=bank_account_number or None,
                     )
 
             # Parse customer information
@@ -1279,6 +1390,9 @@ class NavOnlineInvoiceClient:
             if customer_elements:
                 customer_elem = customer_elements[0]
                 customer_name = get_xml_element_value(customer_elem, "customerName", "")
+                
+                # Parse customer VAT status
+                customer_vat_status = get_xml_element_value(customer_elem, "customerVatStatus", "")
 
                 # Parse customer tax number
                 customer_tax_number = None
@@ -1306,11 +1420,32 @@ class NavOnlineInvoiceClient:
                                 county_code=county_code,
                             )
 
+                # Parse customer address
+                customer_address = None
+                address_elements = find_xml_elements_with_namespace_aware(
+                    customer_elem, "customerAddress"
+                )
+                if address_elements:
+                    detailed_addr_elements = find_xml_elements_with_namespace_aware(
+                        address_elements[0], "detailedAddress"
+                    )
+                    if detailed_addr_elements:
+                        addr_elem = detailed_addr_elements[0]
+                        customer_address = Address(
+                            country_code=get_xml_element_value(addr_elem, "countryCode", ""),
+                            postal_code=get_xml_element_value(addr_elem, "postalCode", ""),
+                            city=get_xml_element_value(addr_elem, "city", ""),
+                            street_name=get_xml_element_value(addr_elem, "streetName", ""),
+                            public_place_category=get_xml_element_value(addr_elem, "publicPlaceCategory", ""),
+                            number=get_xml_element_value(addr_elem, "number", ""),
+                        )
+
                 if customer_name or customer_tax_number:
                     customer_info = CustomerInfo(
                         name=customer_name,
                         tax_number=customer_tax_number,
-                        address=None,  # TODO: Parse address if needed
+                        address=customer_address,
+                        vat_status=customer_vat_status or None,
                     )
 
             # Parse invoice amounts from summary
@@ -1358,22 +1493,252 @@ class NavOnlineInvoiceClient:
                             f"Could not parse gross amount: {gross_amount_str}"
                         )
 
+            # Parse invoice lines
+            invoice_lines = None
+            lines_elements = find_xml_elements_with_namespace_aware(
+                invoice_dom, "invoiceLines"
+            )
+            if lines_elements:
+                lines_elem = lines_elements[0]
+                
+                # Parse merged item indicator
+                merged_item_indicator = False
+                merged_str = get_xml_element_value(lines_elem, "mergedItemIndicator", "")
+                if merged_str:
+                    merged_item_indicator = merged_str.lower() == "true"
+                
+                # Parse individual lines
+                parsed_lines = []
+                line_elements = find_xml_elements_with_namespace_aware(lines_elem, "line")
+                
+                for line_elem in line_elements:
+                    try:
+                        line_number_str = get_xml_element_value(line_elem, "lineNumber", "")
+                        line_number = int(line_number_str) if line_number_str else None
+                        
+                        line_description = get_xml_element_value(line_elem, "lineDescription", "")
+                        
+                        # Parse line expression indicator
+                        line_expression_str = get_xml_element_value(line_elem, "lineExpressionIndicator", "")
+                        line_expression_indicator = line_expression_str.lower() == "true" if line_expression_str else False
+                        
+                        quantity_str = get_xml_element_value(line_elem, "quantity", "")
+                        quantity = float(quantity_str) if quantity_str else None
+                        
+                        unit_of_measure = get_xml_element_value(line_elem, "unitOfMeasure", "")
+                        
+                        unit_price_str = get_xml_element_value(line_elem, "unitPrice", "")
+                        unit_price = float(unit_price_str) if unit_price_str else None
+                        
+                        # Parse line amounts (normal or simplified)
+                        line_amounts = None
+                        amounts_normal = find_xml_elements_with_namespace_aware(line_elem, "lineAmountsNormal")
+                        
+                        if amounts_normal:
+                            amounts_elem = amounts_normal[0]
+                            
+                            # Parse net amount
+                            net_amount = None
+                            net_amount_huf = None
+                            net_data = find_xml_elements_with_namespace_aware(amounts_elem, "lineNetAmountData")
+                            if net_data:
+                                net_str = get_xml_element_value(net_data[0], "lineNetAmount", "")
+                                net_amount = float(net_str) if net_str else None
+                                
+                                net_huf_str = get_xml_element_value(net_data[0], "lineNetAmountHUF", "")
+                                net_amount_huf = float(net_huf_str) if net_huf_str else net_amount
+                            
+                            # Parse VAT rate
+                            vat_rate = None
+                            vat_rate_data = find_xml_elements_with_namespace_aware(amounts_elem, "lineVatRate")
+                            if vat_rate_data:
+                                vat_percentage_str = get_xml_element_value(vat_rate_data[0], "vatPercentage", "")
+                                if vat_percentage_str:
+                                    vat_rate = VatRate(vat_percentage=float(vat_percentage_str))
+                            
+                            # Parse VAT amount
+                            vat_amount = None
+                            vat_amount_huf = None
+                            vat_data = find_xml_elements_with_namespace_aware(amounts_elem, "lineVatData")
+                            if vat_data:
+                                vat_str = get_xml_element_value(vat_data[0], "lineVatAmount", "")
+                                vat_amount = float(vat_str) if vat_str else None
+                                
+                                vat_huf_str = get_xml_element_value(vat_data[0], "lineVatAmountHUF", "")
+                                vat_amount_huf = float(vat_huf_str) if vat_huf_str else vat_amount
+                            
+                            # Parse gross amount
+                            gross_amount = None
+                            gross_amount_huf = None
+                            gross_data = find_xml_elements_with_namespace_aware(amounts_elem, "lineGrossAmountData")
+                            if gross_data:
+                                gross_str = get_xml_element_value(gross_data[0], "lineGrossAmountNormal", "")
+                                gross_amount = float(gross_str) if gross_str else None
+                                
+                                gross_huf_str = get_xml_element_value(gross_data[0], "lineGrossAmountNormalHUF", "")
+                                gross_amount_huf = float(gross_huf_str) if gross_huf_str else gross_amount
+                            
+                            line_amounts = LineAmountsNormal(
+                                line_net_amount=net_amount,
+                                line_net_amount_huf=net_amount_huf or net_amount or 0.0,
+                                line_vat_rate=vat_rate,
+                                line_vat_amount=vat_amount,
+                                line_vat_amount_huf=vat_amount_huf,
+                                line_gross_amount=gross_amount,
+                                line_gross_amount_huf=gross_amount_huf,
+                            )
+                        
+                        invoice_line = InvoiceLine(
+                            line_number=line_number,
+                            line_expression_indicator=line_expression_indicator,
+                            line_description=line_description,
+                            quantity=quantity,
+                            unit_of_measure=unit_of_measure,
+                            unit_price=unit_price,
+                            line_amounts_normal=line_amounts,
+                        )
+                        
+                        parsed_lines.append(invoice_line)
+                        
+                    except Exception as e:
+                        logger.warning(f"Failed to parse invoice line: {e}")
+                        continue
+                
+                if parsed_lines:
+                    invoice_lines = InvoiceLines(
+                        lines=parsed_lines,
+                    )
+
+            # Parse invoice summary
+            invoice_summary = None
+            summary_elements = find_xml_elements_with_namespace_aware(
+                invoice_dom, "invoiceSummary"
+            )
+            if summary_elements:
+                summary_elem = summary_elements[0]
+                
+                # Parse normal summary
+                normal_summary = find_xml_elements_with_namespace_aware(summary_elem, "summaryNormal")
+                if normal_summary:
+                    normal_elem = normal_summary[0]
+                    
+                    # Parse summary by VAT rate
+                    vat_rate_summaries = []
+                    vat_rate_elements = find_xml_elements_with_namespace_aware(normal_elem, "summaryByVatRate")
+                    
+                    for vat_elem in vat_rate_elements:
+                        try:
+                            # Parse VAT rate
+                            vat_rate = None
+                            rate_elements = find_xml_elements_with_namespace_aware(vat_elem, "vatRate")
+                            if rate_elements:
+                                vat_percentage_str = get_xml_element_value(rate_elements[0], "vatPercentage", "")
+                                if vat_percentage_str:
+                                    vat_rate = VatRate(vat_percentage=float(vat_percentage_str))
+                            
+                            # Parse net amount for this VAT rate
+                            net_amount = None
+                            net_amount_huf = None
+                            net_data = find_xml_elements_with_namespace_aware(vat_elem, "vatRateNetData")
+                            if net_data:
+                                net_str = get_xml_element_value(net_data[0], "vatRateNetAmount", "")
+                                net_amount = float(net_str) if net_str else None
+                                
+                                net_huf_str = get_xml_element_value(net_data[0], "vatRateNetAmountHUF", "")
+                                net_amount_huf = float(net_huf_str) if net_huf_str else net_amount
+                            
+                            # Parse VAT amount for this VAT rate
+                            vat_amount = None
+                            vat_amount_huf = None
+                            vat_data = find_xml_elements_with_namespace_aware(vat_elem, "vatRateVatData")
+                            if vat_data:
+                                vat_str = get_xml_element_value(vat_data[0], "vatRateVatAmount", "")
+                                vat_amount = float(vat_str) if vat_str else None
+                                
+                                vat_huf_str = get_xml_element_value(vat_data[0], "vatRateVatAmountHUF", "")
+                                vat_amount_huf = float(vat_huf_str) if vat_huf_str else vat_amount
+                            
+                            # Parse gross amount for this VAT rate
+                            gross_amount = None
+                            gross_data = find_xml_elements_with_namespace_aware(vat_elem, "vatRateGrossData")
+                            if gross_data:
+                                gross_str = get_xml_element_value(gross_data[0], "vatRateGrossAmount", "")
+                                gross_amount = float(gross_str) if gross_str else None
+                            
+                            vat_summary = SummaryByVatRate(
+                                vat_rate=vat_rate,
+                                vat_rate_net_amount=net_amount or 0.0,
+                                vat_rate_net_amount_huf=net_amount_huf or net_amount or 0.0,
+                                vat_rate_vat_amount=vat_amount or 0.0,
+                                vat_rate_vat_amount_huf=vat_amount_huf or vat_amount or 0.0,
+                            )
+                            
+                            vat_rate_summaries.append(vat_summary)
+                            
+                        except Exception as e:
+                            logger.warning(f"Failed to parse VAT rate summary: {e}")
+                            continue
+                    
+                    # Parse total amounts
+                    total_net_str = get_xml_element_value(normal_elem, "invoiceNetAmount", "")
+                    total_net = float(total_net_str) if total_net_str else None
+                    
+                    total_net_huf_str = get_xml_element_value(normal_elem, "invoiceNetAmountHUF", "")
+                    total_net_huf = float(total_net_huf_str) if total_net_huf_str else total_net
+                    
+                    total_vat_str = get_xml_element_value(normal_elem, "invoiceVatAmount", "")
+                    total_vat = float(total_vat_str) if total_vat_str else None
+                    
+                    total_vat_huf_str = get_xml_element_value(normal_elem, "invoiceVatAmountHUF", "")
+                    total_vat_huf = float(total_vat_huf_str) if total_vat_huf_str else total_vat
+                    
+                    # Parse gross total from summaryGrossData
+                    total_gross = None
+                    total_gross_huf = None
+                    gross_summary = find_xml_elements_with_namespace_aware(summary_elem, "summaryGrossData")
+                    if gross_summary:
+                        total_gross_str = get_xml_element_value(gross_summary[0], "invoiceGrossAmount", "")
+                        total_gross = float(total_gross_str) if total_gross_str else None
+                        
+                        total_gross_huf_str = get_xml_element_value(gross_summary[0], "invoiceGrossAmountHUF", "")
+                        total_gross_huf = float(total_gross_huf_str) if total_gross_huf_str else total_gross
+                    
+                    summary_normal = SummaryNormal(
+                        summary_by_vat_rate=vat_rate_summaries,
+                        invoice_net_amount=total_net or 0.0,
+                        invoice_net_amount_huf=total_net_huf or total_net or 0.0,
+                        invoice_vat_amount=total_vat or 0.0,
+                        invoice_vat_amount_huf=total_vat_huf or total_vat or 0.0,
+                    )
+                    
+                    invoice_summary = InvoiceSummary(
+                        summary_normal=summary_normal,
+                        invoice_gross_amount=total_gross,
+                        invoice_gross_amount_huf=total_gross_huf,
+                    )
+
             # Create the invoice detail object
             detail = InvoiceDetail(
                 invoice_number=invoice_number,
                 issue_date=issue_date,
                 completion_date=completion_date,
+                completeness_indicator=completeness_indicator,
                 currency_code=currency_code,
                 exchange_rate=exchange_rate,
+                payment_date=payment_date,
+                payment_method=payment_method,
+                invoice_delivery_date=invoice_delivery_date,
+                invoice_category=invoice_category,
+                invoice_appearance=invoice_appearance,
+                periodical_settlement=periodical_settlement,
+                small_business_indicator=small_business_indicator,
                 supplier_info=supplier_info,
                 customer_info=customer_info,
                 invoice_net_amount=invoice_net_amount,
                 invoice_vat_amount=invoice_vat_amount,
                 invoice_gross_amount=invoice_gross_amount,
-                source="NAV_API",
-                additional_data={
-                    "raw_xml": decoded_invoice_xml
-                },  # Store the raw XML for reference
+                invoice_lines=invoice_lines,
+                invoice_summary=invoice_summary,
             )
 
             return detail

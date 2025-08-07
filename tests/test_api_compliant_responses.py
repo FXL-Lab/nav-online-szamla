@@ -317,15 +317,12 @@ class TestInvoiceDataType:
 
         invoice_data = InvoiceDataType(
             invoice_number="TEST001",
+            invoice_issue_date=datetime.now(),
+            completeness_indicator=True,
             invoice_direction=InvoiceDirection.OUTBOUND,
             supplier_info=supplier_info,
             customer_info=customer_info,
             invoice_main={"invoiceCategory": "NORMAL", "currencyCode": "HUF"},
-            invoice_summary={
-                "invoiceNetAmount": 10000.0,
-                "invoiceVatAmount": 2700.0,
-                "invoiceGrossAmount": 12700.0,
-            },
         )
 
         assert invoice_data.invoice_number == "TEST001"
@@ -333,4 +330,5 @@ class TestInvoiceDataType:
         assert invoice_data.supplier_info.name == "Test Supplier"
         assert invoice_data.customer_info.name == "Test Customer"
         assert invoice_data.invoice_main["currencyCode"] == "HUF"
-        assert invoice_data.invoice_summary["invoiceNetAmount"] == 10000.0
+        assert invoice_data.completeness_indicator is True
+        assert invoice_data.invoice_summary is None  # Now optional
