@@ -7,6 +7,8 @@ This module provides the main client class for interacting with the NAV Online S
 import logging
 from datetime import datetime
 from typing import List, Optional
+import json
+import base64
 
 from .config import (
     ONLINE_SZAMLA_URL,
@@ -41,6 +43,7 @@ from .models import (
     InvoiceDigestType,
     BasicResultType,
     BasicHeaderType,
+    InvoiceOperation
 )
 from .exceptions import (
     NavApiException,
@@ -136,8 +139,6 @@ class NavOnlineInvoiceClient:
                 "requestSignature": request_signature,
             }
         }
-
-        import json
 
         with self.http_client as client:
             headers = {"Content-Type": "application/json"}
@@ -753,8 +754,6 @@ class NavOnlineInvoiceClient:
                     )
                     batch_index = int(batch_index_str) if batch_index_str else None
 
-                    from .models import InvoiceOperation
-
                     digest = InvoiceDigest(
                         invoice_number=invoice_number,
                         batch_index=batch_index,
@@ -1165,7 +1164,6 @@ class NavOnlineInvoiceClient:
             InvoiceDetail: Parsed invoice detail
         """
         try:
-            import base64
 
             dom = parse_xml_safely(xml_response)
 

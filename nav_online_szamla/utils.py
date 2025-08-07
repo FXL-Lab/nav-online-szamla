@@ -7,11 +7,11 @@ XML processing, and other common tasks.
 
 import hashlib
 import random
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Tuple, Optional
 import xml.dom.minidom
 
-from .config import CUSTOM_ID_CHARACTERS, CUSTOM_ID_LENGTH, MAX_DATE_RANGE_DAYS
+from .config import CUSTOM_ID_CHARACTERS, CUSTOM_ID_LENGTH, MAX_DATE_RANGE_DAYS, NETWORK_ERROR_KEYWORDS
 from .exceptions import NavValidationException, NavXmlParsingException
 
 
@@ -315,14 +315,7 @@ def format_timestamp_for_nav(dt: Optional[datetime] = None) -> str:
         str: Formatted timestamp string with max 3 decimal places
     """
     if dt is None:
-        try:
-            # Use modern timezone-aware datetime
-            from datetime import timezone
-
-            dt = datetime.now(timezone.utc)
-        except ImportError:
-            # Fallback for older Python versions
-            dt = datetime.utcnow()
+        dt = datetime.now(timezone.utc)
 
     # Format with microseconds and then truncate to 3 decimal places
     timestamp_str = dt.strftime("%Y-%m-%dT%H:%M:%S.%f")
@@ -341,7 +334,5 @@ def is_network_error(error_message: str) -> bool:
     Returns:
         bool: True if network error, False otherwise
     """
-    from .config import NETWORK_ERROR_KEYWORDS
-
     error_lower = error_message.lower()
     return any(keyword in error_lower for keyword in NETWORK_ERROR_KEYWORDS)

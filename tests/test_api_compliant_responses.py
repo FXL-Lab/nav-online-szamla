@@ -14,16 +14,15 @@ from nav_online_szamla.models import (
     BasicOnlineInvoiceResponseType,
     QueryInvoiceDigestResponseType,
     QueryInvoiceCheckResponseType,
-    QueryInvoiceDataResponseType,
-    QueryInvoiceChainDigestResponseType,
     InvoiceDigestType,
     InvoiceCheckResultType,
     InvoiceDataType,
-    InvoiceChainDigestType,
     # Dependencies
     InvoiceDirection,
     SupplierInfo,
     CustomerInfo,
+    TaxNumber,
+    Address,
 )
 
 
@@ -299,8 +298,6 @@ class TestInvoiceDataType:
 
     def test_invoice_data_creation(self):
         """Test invoice data creation."""
-        from nav_online_szamla.models import TaxNumber, Address
-
         address = Address(
             country_code="HU",
             postal_code="1234",

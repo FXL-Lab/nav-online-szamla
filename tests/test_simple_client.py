@@ -7,7 +7,13 @@ import requests_mock
 from datetime import datetime
 
 from nav_online_szamla.client import NavOnlineInvoiceClient
-from nav_online_szamla.models import NavCredentials, InvoiceDirection, InvoiceDigest
+from nav_online_szamla.models import (
+    InvoiceDirection,
+    QueryInvoiceDigestRequest,
+    InvoiceQueryParams,
+    MandatoryQueryParams,
+    DateTimeRange,
+)
 from nav_online_szamla.exceptions import (
     NavValidationException,
     NavApiException,
@@ -103,14 +109,6 @@ class TestNavOnlineInvoiceClient:
                 </QueryInvoiceDigestResponse>""",
             )
 
-            from nav_online_szamla.models import (
-                QueryInvoiceDigestRequest,
-                InvoiceQueryParams,
-                MandatoryQueryParams,
-                InvoiceDirection,
-                DateTimeRange,
-            )
-
             request = QueryInvoiceDigestRequest(
                 page=1,
                 invoice_direction=InvoiceDirection.OUTBOUND,
@@ -134,7 +132,7 @@ class TestNavOnlineInvoiceClient:
                 == InvoiceDirection.OUTBOUND
             )
 
-    def test_query_invoice_digest_success(self, sample_credentials):
+    def test_query_invoice_digest_success_duplicate(self, sample_credentials):
         """Test successful invoice digest query."""
         client = NavOnlineInvoiceClient()
 
@@ -176,14 +174,6 @@ class TestNavOnlineInvoiceClient:
                         </invoiceDigest>
                     </invoiceDigestResult>
                 </QueryInvoiceDigestResponse>""",
-            )
-
-            from nav_online_szamla.models import (
-                QueryInvoiceDigestRequest,
-                InvoiceQueryParams,
-                MandatoryQueryParams,
-                InvoiceDirection,
-                DateTimeRange,
             )
 
             request = QueryInvoiceDigestRequest(

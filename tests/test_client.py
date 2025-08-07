@@ -7,7 +7,14 @@ import requests_mock
 from datetime import datetime
 
 from nav_online_szamla.client import NavOnlineInvoiceClient
-from nav_online_szamla.models import NavCredentials, InvoiceDirection, InvoiceDigest
+from nav_online_szamla.models import (
+    InvoiceDirection,
+    QueryInvoiceDigestRequest,
+    MandatoryQueryParams,
+    DateTimeRange,
+    InvoiceQueryParams,
+    QueryInvoiceCheckRequest,
+)
 from nav_online_szamla.exceptions import (
     NavValidationException,
     NavApiException,
@@ -120,14 +127,6 @@ class TestNavOnlineInvoiceClient:
                         </invoiceDigest>
                     </invoiceDigestResult>
                 </QueryInvoiceDigestResponse>""",
-            )
-
-            from nav_online_szamla.models import (
-                QueryInvoiceDigestRequest,
-                MandatoryQueryParams,
-                InvoiceDirection,
-                DateTimeRange,
-                InvoiceQueryParams,
             )
 
             request = QueryInvoiceDigestRequest(
@@ -247,8 +246,6 @@ class TestNavOnlineInvoiceClient:
                     </invoiceCheckResult>
                 </QueryInvoiceCheckResponse>""",
             )
-
-            from nav_online_szamla.models import QueryInvoiceCheckRequest
 
             request = QueryInvoiceCheckRequest(
                 invoice_number="TEST001",
