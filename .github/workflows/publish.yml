@@ -1,0 +1,118 @@
+name: Publish to PyPI
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+jobs:
+  publish:
+    # Only run if PR was merged (not just closed)
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Fetch full history for version detection
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.13"
+
+    - name: Install Poetry
+      uses: snok/install-poetry@v1
+      with:
+        version: latest
+        virtualenvs-create: true
+        virtualenvs-in-project: true
+
+    - name: Install dependencies
+      run: poetry install --no-interaction --no-root
+
+    - name: Install project
+      run: poetry install --no-interaction
+
+    - name: Check if version was bumped
+      id: version-check
+      run: |
+        # Get current version from pyproject.toml
+        CURRENT_VERSION=$(poetry version -s)
+        echo "Current version: $CURRENT_VERSION"
+        
+        # Check if this version exists on PyPI
+        PACKAGE_NAME=$(poetry version | cut -d' ' -f1)
+        echo "Package name: $PACKAGE_NAME"
+        
+        # Try to get the version from PyPI (will fail if version doesn't exist)
+        if pip index versions $PACKAGE_NAME | grep -q "$CURRENT_VERSION"; then
+          echo "Version $CURRENT_VERSION already exists on PyPI"
+          echo "should_publish=false" >> $GITHUB_OUTPUT
+        else
+          echo "Version $CURRENT_VERSION not found on PyPI, proceeding with publish"
+          echo "should_publish=true" >> $GITHUB_OUTPUT
+        fi
+        
+        echo "version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+        echo "package_name=$PACKAGE_NAME" >> $GITHUB_OUTPUT
+
+    - name: Run tests before publishing
+      if: steps.version-check.outputs.should_publish == 'true'
+      run: |
+        poetry run pytest tests/ -v
+
+    - name: Build package
+      if: steps.version-check.outputs.should_publish == 'true'
+      run: |
+        poetry build
+
+    - name: Publish to PyPI
+      if: steps.version-check.outputs.should_publish == 'true'
+      env:
+        POETRY_PYPI_TOKEN_PYPI: ${{ secrets.PYPI_API_TOKEN }}
+      run: |
+        poetry publish
+
+    - name: Create GitHub Release
+      if: steps.version-check.outputs.should_publish == 'true'
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: v${{ steps.version-check.outputs.version }}
+        release_name: Release v${{ steps.version-check.outputs.version }}
+        body: |
+          Release v${{ steps.version-check.outputs.version }}
+          
+          Package published to PyPI: https://pypi.org/project/${{ steps.version-check.outputs.package_name }}/${{ steps.version-check.outputs.version }}/
+          
+          ## Changes
+          This release was automatically created from PR #${{ github.event.pull_request.number }}: ${{ github.event.pull_request.title }}
+        draft: false
+        prerelease: false
+
+    - name: Upload build artifacts
+      if: steps.version-check.outputs.should_publish == 'true'
+      uses: actions/upload-artifact@v3
+      with:
+        name: dist-files
+        path: dist/
+
+    - name: Comment on PR
+      if: steps.version-check.outputs.should_publish == 'true'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          github.rest.issues.createComment({
+            issue_number: ${{ github.event.pull_request.number }},
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: '🚀 Package v${{ steps.version-check.outputs.version }} has been successfully published to PyPI!\n\n📦 [View on PyPI](https://pypi.org/project/${{ steps.version-check.outputs.package_name }}/${{ steps.version-check.outputs.version }}/)\n🏷️ [GitHub Release](https://github.com/${{ github.repository }}/releases/tag/v${{ steps.version-check.outputs.version }})'
+          })
+
+    - name: Skip publishing message
+      if: steps.version-check.outputs.should_publish == 'false'
+      run: |
+        echo "::notice::Skipping publish - version ${{ steps.version-check.outputs.version }} already exists on PyPI"
