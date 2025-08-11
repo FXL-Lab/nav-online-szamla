@@ -3,9 +3,8 @@ Test configuration and fixtures for the NAV Online Számla tests.
 """
 
 import pytest
-from datetime import datetime
 
-from nav_online_szamla.models import NavCredentials, InvoiceDirection
+from nav_online_szamla.models_legacy import NavCredentials
 
 
 @pytest.fixture

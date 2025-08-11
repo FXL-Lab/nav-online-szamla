@@ -6,48 +6,23 @@ This package provides a Python client for interacting with the Hungarian NAV
 """
 
 from .client import NavOnlineInvoiceClient
+# Import only essential custom classes that don't exist in generated models
+from .models_legacy import (
+    NavCredentials,  # Custom credentials class
+)
+# Import official API models (primary usage)
 from .models import (
-    NavCredentials,
-    InvoiceDirection,
-    InvoiceOperation,
-    CustomerVatStatus,
-    InvoiceDigest,
-    InvoiceDetail,
-    ApiResponse,
-    # New API-compliant request types
-    QueryInvoiceDigestRequest,
-    QueryInvoiceCheckRequest,
-    QueryInvoiceDataRequest,
-    QueryInvoiceChainDigestRequest,
-    MandatoryQueryParams,
-    AdditionalQueryParams,
-    RelationalQueryParams,
-    TransactionQueryParams,
-    InvoiceQueryParams,
-    DateRange,
-    DateTimeRange,
-    OriginalInvoiceNumber,
-    RelationalQueryParam,
-    # New API-compliant response types
+    # Response types
     BasicOnlineInvoiceResponseType,
     QueryInvoiceDigestResponseType,
     QueryInvoiceCheckResponseType,
     QueryInvoiceDataResponseType,
     QueryInvoiceChainDigestResponseType,
+    # Data types
     InvoiceDigestType,
-    InvoiceCheckResultType,
     InvoiceDataType,
-    InvoiceChainDigestType,
     BasicResultType,
     BasicHeaderType,
-    SoftwareType,
-    NotificationType,
-    # New enums
-    InvoiceCategory,
-    PaymentMethod,
-    InvoiceAppearance,
-    Source,
-    QueryOperator,
 )
 from .exceptions import (
     NavApiException,
