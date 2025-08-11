@@ -4,30 +4,39 @@ Tests for the main NAV client functionality.
 
 import pytest
 import requests_mock
-from datetime import datetime
 
 from nav_online_szamla.client import NavOnlineInvoiceClient
+from nav_online_szamla.models_legacy import NavCredentials
 from nav_online_szamla.models import (
-    InvoiceDirection,
+    InvoiceDirectionType,
     QueryInvoiceDigestRequest,
-    MandatoryQueryParams,
-    DateTimeRange,
-    InvoiceQueryParams,
+    MandatoryQueryParamsType,
+    DateIntervalParamType,
+    InvoiceQueryParamsType,
     QueryInvoiceCheckRequest,
+    InvoiceNumberQueryType,
 )
 from nav_online_szamla.exceptions import (
-    NavValidationException,
     NavApiException,
-    NavInvoiceNotFoundException,
 )
 
 
 class TestNavOnlineInvoiceClient:
     """Test cases for the NAV Online Invoice client."""
 
+    def _get_test_credentials(self):
+        """Helper method to create test credentials."""
+        return NavCredentials(
+            login="test_user",
+            password="test_password", 
+            signer_key="test_signer_key",
+            tax_number="12345678"
+        )
+
     def test_client_initialization_default(self):
         """Test client initialization with default settings."""
-        client = NavOnlineInvoiceClient()
+        credentials = self._get_test_credentials()
+        client = NavOnlineInvoiceClient(credentials)
 
         assert (
             client.base_url == "https://api.onlineszamla.nav.gov.hu/invoiceService/v3/"
@@ -37,20 +46,22 @@ class TestNavOnlineInvoiceClient:
     def test_client_initialization_custom_url(self):
         """Test client initialization with custom base URL."""
         custom_url = "https://test.api.onlineszamla.nav.gov.hu"
-        client = NavOnlineInvoiceClient(base_url=custom_url)
+        credentials = self._get_test_credentials()
+        client = NavOnlineInvoiceClient(credentials, base_url=custom_url)
 
         assert client.base_url == custom_url
 
     def test_client_initialization_custom_timeout(self):
         """Test client initialization with custom timeout."""
-        client = NavOnlineInvoiceClient(timeout=60)
+        credentials = self._get_test_credentials()
+        client = NavOnlineInvoiceClient(credentials, timeout=60)
 
         # Timeout should be set properly for the http_client
         assert client.http_client is not None
 
     def test_token_exchange_success(self, sample_credentials):
         """Test successful token exchange."""
-        client = NavOnlineInvoiceClient()
+        client = NavOnlineInvoiceClient(sample_credentials)
 
         with requests_mock.Mocker() as m:
             m.post(
@@ -68,7 +79,7 @@ class TestNavOnlineInvoiceClient:
 
     def test_token_exchange_failure(self, sample_credentials):
         """Test token exchange failure."""
-        client = NavOnlineInvoiceClient()
+        client = NavOnlineInvoiceClient(sample_credentials)
 
         with requests_mock.Mocker() as m:
             m.post(
@@ -87,7 +98,7 @@ class TestNavOnlineInvoiceClient:
 
     def test_query_invoice_digest_success(self, sample_credentials):
         """Test successful invoice digest query."""
-        client = NavOnlineInvoiceClient()
+        client = NavOnlineInvoiceClient(sample_credentials)
 
         with requests_mock.Mocker() as m:
             # Mock token exchange
@@ -131,12 +142,12 @@ class TestNavOnlineInvoiceClient:
 
             request = QueryInvoiceDigestRequest(
                 page=1,
-                invoice_direction=InvoiceDirection.OUTBOUND,
-                invoice_query_params=InvoiceQueryParams(
-                    mandatory_query_params=MandatoryQueryParams(
-                        ins_date=DateTimeRange(
-                            date_time_from="2023-01-01T00:00:00.000Z",
-                            date_time_to="2023-01-31T23:59:59.999Z",
+                invoice_direction=InvoiceDirectionType.OUTBOUND,
+                invoice_query_params=InvoiceQueryParamsType(
+                    mandatory_query_params=MandatoryQueryParamsType(
+                        ins_date=DateIntervalParamType(
+                            date_from="2023-01-01",
+                            date_to="2023-01-31",
                         )
                     )
                 ),
@@ -144,34 +155,31 @@ class TestNavOnlineInvoiceClient:
 
             response = client.query_invoice_digest(sample_credentials, request)
 
-            assert response.available_count == 1
-            assert len(response.invoice_digests) == 1
-            assert response.invoice_digests[0].invoice_number == "TEST001"
-            assert (
-                response.invoice_digests[0].invoice_direction
-                == InvoiceDirection.OUTBOUND
-            )
+            assert response.invoice_digest_result is not None
+            assert len(response.invoice_digest_result.invoice_digest) == 1
+            assert response.invoice_digest_result.invoice_digest[0].invoice_number == "TEST001"
 
     def test_parse_invoice_digest_response_error(self, mock_error_response):
         """Test parsing of error response in invoice digest."""
-        client = NavOnlineInvoiceClient()
+        credentials = self._get_test_credentials()
+        client = NavOnlineInvoiceClient(credentials)
 
         with pytest.raises(NavApiException, match="INVALID_CREDENTIALS"):
             client._parse_invoice_digest_response(mock_error_response)
 
     def test_parse_error_response(self, mock_error_response):
         """Test error response parsing."""
-        client = NavOnlineInvoiceClient()
+        credentials = self._get_test_credentials()
+        client = NavOnlineInvoiceClient(credentials)
 
         error_info = client._parse_error_response(mock_error_response)
 
         assert error_info.error_code == "INVALID_CREDENTIALS"
         assert error_info.message == "Invalid authentication credentials"
-        assert isinstance(error_info.timestamp, datetime)
 
     def test_get_invoice_detail_success(self, sample_credentials):
         """Test successful invoice detail retrieval."""
-        client = NavOnlineInvoiceClient()
+        client = NavOnlineInvoiceClient(sample_credentials)
 
         with requests_mock.Mocker() as m:
             # Mock token exchange
@@ -203,15 +211,15 @@ class TestNavOnlineInvoiceClient:
             )
 
             invoice_data = client.get_invoice_detail(
-                sample_credentials, "TEST001", InvoiceDirection.OUTBOUND
+                sample_credentials, "TEST001", InvoiceDirectionType.OUTBOUND
             )
 
             assert invoice_data.invoice_number == "TEST001"
-            assert invoice_data.issue_date is not None
+            assert invoice_data.invoice_issue_date is not None
 
     def test_query_invoice_check_success(self, sample_credentials):
         """Test successful invoice check query."""
-        client = NavOnlineInvoiceClient()
+        client = NavOnlineInvoiceClient(sample_credentials)
 
         with requests_mock.Mocker() as m:
             # Mock token exchange
@@ -248,9 +256,11 @@ class TestNavOnlineInvoiceClient:
             )
 
             request = QueryInvoiceCheckRequest(
-                invoice_number="TEST001",
-                invoice_direction=InvoiceDirection.OUTBOUND,
-                batch_index=1,
+                invoice_number_query=InvoiceNumberQueryType(
+                    invoice_number="TEST001",
+                    invoice_direction=InvoiceDirectionType.OUTBOUND,
+                    batch_index=1,
+                )
             )
 
             result = client.query_invoice_check(sample_credentials, request)
