@@ -13,6 +13,7 @@ import base64
 
 from xsdata.formats.dataclass.context import XmlContext
 from xsdata.formats.dataclass.serializers import XmlSerializer
+from xsdata.formats.dataclass.serializers.config import SerializerConfig
 from xsdata.formats.dataclass.parsers import XmlParser
 
 from .config import (
@@ -69,6 +70,7 @@ from .models import (
     # Common types
     UserHeaderType,
     SoftwareType,
+    SoftwareOperationType,
 )
 
 # Import only essential custom classes
@@ -114,6 +116,7 @@ class NavOnlineInvoiceClient:
             base_url: Base URL for the NAV API  
             timeout: Request timeout in seconds
         """
+        self.validate_credentials(credentials)
         self.credentials = credentials
         self.base_url = base_url
         self.http_client = NavHttpClient(base_url, timeout)
@@ -122,6 +125,26 @@ class NavOnlineInvoiceClient:
         self.xml_context = XmlContext()
         self.xml_serializer = XmlSerializer(context=self.xml_context)
         self.xml_parser = XmlParser(context=self.xml_context)
+
+    def validate_credentials(self, credentials: NavCredentials) -> None:
+        """
+        Validate NAV API credentials.
+
+        Args:
+            credentials: NAV API credentials
+
+        Raises:
+            NavValidationException: If credentials are invalid
+        """
+        if not all([credentials.login, credentials.password, credentials.signer_key]):
+            raise NavValidationException(
+                "Missing required credentials: login, password, or signer_key"
+            )
+
+        if not validate_tax_number(credentials.tax_number):
+            raise NavValidationException(
+                f"Invalid tax number format: {credentials.tax_number}"
+            )
 
     def _create_basic_header(self) -> BasicHeaderType:
         """Create basic header for requests."""
@@ -132,9 +155,8 @@ class NavOnlineInvoiceClient:
             header_version="1.0"
         )
 
-    def _create_user_header(self, credentials: NavCredentials) -> UserHeaderType:
-        """Create user header with authentication data."""
-        header = self._create_basic_header()
+    def _create_user_header(self, credentials: NavCredentials, header: BasicHeaderType) -> UserHeaderType:
+        """Create user header with authentication data using the provided header."""
         password_hash = generate_password_hash(credentials.password)
         request_signature = calculate_request_signature(
             header.request_id, 
@@ -160,7 +182,7 @@ class NavOnlineInvoiceClient:
         return SoftwareType(
             software_id=SOFTWARE_ID,
             software_name=SOFTWARE_NAME,
-            software_operation="LOCAL_SOFTWARE",
+            software_operation=SoftwareOperationType.LOCAL_SOFTWARE,
             software_main_version=SOFTWARE_VERSION,
             software_dev_name=SOFTWARE_DEV_NAME,
             software_dev_contact=SOFTWARE_DEV_CONTACT,
@@ -169,8 +191,42 @@ class NavOnlineInvoiceClient:
         )
 
     def _serialize_request_to_xml(self, request_obj) -> str:
-        """Serialize a request object to XML using xsdata."""
-        return self.xml_serializer.render(request_obj)
+        """Serialize a request object to XML using xsdata with proper namespace formatting."""
+        config = SerializerConfig(
+            pretty_print=True,
+            xml_declaration=True,
+            encoding="UTF-8"
+        )
+        
+        serializer = XmlSerializer(context=self.xml_context, config=config)
+        xml_output = serializer.render(request_obj)
+        
+        # Format with custom namespace prefixes to match NAV expected format
+        return self._format_xml_with_custom_namespaces(xml_output)
+    
+    def _format_xml_with_custom_namespaces(self, xml_string: str) -> str:
+        """
+        Convert xsdata generated XML to match NAV expected format:
+        - ns0 -> default namespace
+        - ns1 -> common prefix
+        """
+        # Replace namespace declarations and prefixes
+        xml_string = xml_string.replace(
+            'xmlns:ns0="http://schemas.nav.gov.hu/OSA/3.0/api"',
+            'xmlns="http://schemas.nav.gov.hu/OSA/3.0/api" xmlns:common="http://schemas.nav.gov.hu/NTCA/1.0/common"'
+        )
+        
+        # Remove redundant namespace declarations
+        xml_string = xml_string.replace(
+            ' xmlns:ns1="http://schemas.nav.gov.hu/NTCA/1.0/common"',
+            ''
+        )
+        
+        # Replace element prefixes
+        xml_string = xml_string.replace('ns0:', '')  # Remove ns0 prefix (default namespace)
+        xml_string = xml_string.replace('ns1:', 'common:')  # Replace ns1 with common
+        
+        return xml_string
 
     def create_query_invoice_digest_request(
         self, 
@@ -182,17 +238,8 @@ class NavOnlineInvoiceClient:
         """Create a QueryInvoiceDigestRequest using generated models."""
         
         header = self._create_basic_header()
-        user = self._create_user_header(credentials)
+        user = self._create_user_header(credentials, header)
         software = self._create_software_info(credentials)
-        
-        request_type = QueryInvoiceDigestRequestType(
-            header=header,
-            user=user,
-            software=software,
-            page=page,
-            invoice_direction=invoice_direction,
-            invoice_query_params=invoice_query_params
-        )
         
         return QueryInvoiceDigestRequest(
             header=header,
@@ -214,7 +261,7 @@ class NavOnlineInvoiceClient:
         """Create a QueryInvoiceDataRequest using generated models."""
         
         header = self._create_basic_header()
-        user = self._create_user_header(credentials)
+        user = self._create_user_header(credentials, header)
         software = self._create_software_info(credentials)
         
         invoice_number_query = InvoiceNumberQueryType(
@@ -233,7 +280,6 @@ class NavOnlineInvoiceClient:
         
     def query_invoice_data_with_xsdata(
         self,
-        credentials: NavCredentials,
         invoice_number: str,
         invoice_direction: InvoiceDirectionType,
         batch_index: Optional[int] = None,
@@ -243,15 +289,13 @@ class NavOnlineInvoiceClient:
         Query invoice data using xsdata-generated dataclasses.
         This demonstrates the new approach using automatic XML serialization.
         """
-        self.validate_credentials(credentials)
-
         if not invoice_number:
             raise NavValidationException("Invoice number is required")
 
         try:
             # Create the request using generated models
             request = self.create_query_invoice_data_request(
-                credentials=credentials,
+                credentials=self.credentials,
                 invoice_number=invoice_number,
                 invoice_direction=invoice_direction,
                 batch_index=batch_index,
@@ -402,25 +446,6 @@ class NavOnlineInvoiceClient:
             logger.error(f"Unexpected error in get_invoice_data: {e}")
             raise NavApiException(f"Failed to get invoice data: {str(e)}")
 
-    def validate_credentials(self, credentials: NavCredentials) -> None:
-        """
-        Validate NAV API credentials.
-
-        Args:
-            credentials: NAV API credentials
-
-        Raises:
-            NavValidationException: If credentials are invalid
-        """
-        if not all([credentials.login, credentials.password, credentials.signer_key]):
-            raise NavValidationException(
-                "Missing required credentials: login, password, or signer_key"
-            )
-
-        if not validate_tax_number(credentials.tax_number):
-            raise NavValidationException(
-                f"Invalid tax number format: {credentials.tax_number}"
-            )
 
     def get_token(self, credentials: NavCredentials) -> str:
         """

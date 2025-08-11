@@ -155,7 +155,9 @@ class NavHttpClient:
 
         try:
             response = self._make_request("POST", url, headers, data)
-            logger.debug(response.content)
+            logger.debug(f"Response status: {response.status_code}")
+            logger.debug(f"Response headers: {response.headers}")
+            logger.debug(f"Response content: {response.content}")
             response.raise_for_status()
             return response
 
@@ -166,11 +168,32 @@ class NavHttpClient:
                 raise NavNetworkException(f"Network error: {str(e)}")
             elif hasattr(e, "response") and e.response is not None:
                 status_code = e.response.status_code
+                
+                # Try to get response content in different ways
+                try:
+                    response_content = e.response.text
+                except:
+                    try:
+                        response_content = e.response.content.decode('utf-8')
+                    except:
+                        response_content = str(e.response.content)
+                
+                # Print detailed error information
+                print(f"\n=== NAV API ERROR RESPONSE ===")
+                print(f"Status Code: {status_code}")
+                print(f"URL: {url}")
+                print(f"Request Headers: {headers}")
+                print(f"Request Data (first 1000 chars): {data[:1000]}...")
+                print(f"Response Headers: {dict(e.response.headers)}")
+                print(f"Response Content: {response_content}")
+                print(f"Response Content Length: {len(response_content)}")
+                print(f"=== END ERROR RESPONSE ===\n")
+                
                 if status_code == 429:
                     raise NavRateLimitException("Rate limit exceeded")
                 else:
                     raise NavApiException(
-                        f"HTTP {status_code}: {str(e)}, response_data: {str(e.response.content) if e.response else 'No response'}"
+                        f"HTTP {status_code}: {str(e)}, response_data: {response_content}"
                     )
             else:
                 raise NavApiException(f"Request failed: {str(e)}")
