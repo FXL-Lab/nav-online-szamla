@@ -780,7 +780,7 @@ class NavOnlineInvoiceClient:
         start_date: datetime,
         end_date: datetime,
         invoice_direction: InvoiceDirectionType = InvoiceDirectionType.OUTBOUND,
-    ) -> List[InvoiceDetailType]:
+    ) -> List[InvoiceData]:
         """
         Get all invoice data for a given date range by first querying invoice digests
         and then fetching detailed data for each invoice.
@@ -791,7 +791,7 @@ class NavOnlineInvoiceClient:
             invoice_direction: Invoice direction to query (default: OUTBOUND)
 
         Returns:
-            List[InvoiceDetail]: List of detailed invoice data
+            List[InvoiceData]: List of complete invoice data objects
 
         Raises:
             NavValidationException: If parameters are invalid
@@ -807,7 +807,7 @@ class NavOnlineInvoiceClient:
                 f"Date range too large. Maximum allowed: {MAX_DATE_RANGE_DAYS} days"
             )
 
-        all_invoice_details = []
+        all_invoice_data = []
         processed_count = 0
 
         try:
@@ -821,26 +821,14 @@ class NavOnlineInvoiceClient:
 
             while True:
                 logger.info(f"Querying invoice digests - page {page}")
-
-                # Create date range for the query
-                date_range = DateIntervalParamType(
-                    date_from=start_date.strftime("%Y-%m-%d"),
-                    date_to=end_date.strftime("%Y-%m-%d"),
-                )
-
-                # Create mandatory query params with date range
-                mandatory_params = MandatoryQueryParamsType(invoice_issue_date=date_range)
-
                 # Create invoice query params
                 invoice_query_params = InvoiceQueryParamsType(
-                    mandatory_query_params=mandatory_params
-                )
-
-                # Create the digest request
-                digest_request = QueryInvoiceDigestRequest(
-                    page=page,
-                    invoice_direction=invoice_direction,
-                    invoice_query_params=invoice_query_params,
+                    mandatory_query_params=MandatoryQueryParamsType(
+                        invoice_issue_date=DateIntervalParamType(
+                            date_from=start_date.strftime("%Y-%m-%d"),
+                            date_to=end_date.strftime("%Y-%m-%d"),
+                        )
+                    )
                 )
 
                 # Query invoice digests
@@ -874,25 +862,17 @@ class NavOnlineInvoiceClient:
                         if invoice_direction == InvoiceDirectionType.INBOUND:
                             supplier_tax_for_request = digest.supplier_tax_number
 
-                        data_request = QueryInvoiceDataRequest(
-                            invoice_number_query=InvoiceNumberQueryType(
-                                invoice_number=digest.invoice_number,
-                                invoice_direction=invoice_direction,
-                                batch_index=digest.batch_index,
-                                supplier_tax_number=supplier_tax_for_request
-                            )
-                        )
-
-                        # Get detailed invoice data
-                        invoice_detail = self.query_invoice_data(
+                        # Get detailed invoice data using the get_invoice_data method
+                        # which returns the parsed InvoiceData object directly
+                        invoice_data = self.get_invoice_data(
                             invoice_number=digest.invoice_number,
                             invoice_direction=invoice_direction,
                             batch_index=digest.batch_index,
                             supplier_tax_number=supplier_tax_for_request
                         )
 
-                        if invoice_detail:
-                            all_invoice_details.append(invoice_detail)
+                        if invoice_data:
+                            all_invoice_data.append(invoice_data)
                             processed_count += 1
 
                             if processed_count % 10 == 0:
@@ -929,191 +909,13 @@ class NavOnlineInvoiceClient:
             logger.info(
                 f"Completed invoice data retrieval. Total processed: {processed_count} invoices"
             )
-            return all_invoice_details
+            return all_invoice_data
 
         except (NavValidationException, NavApiException):
             raise
         except Exception as e:
             logger.error(
                 f"Unexpected error in get_all_invoice_data_for_date_range: {str(e)}"
-            )
-            raise NavApiException(
-                f"Unexpected error during comprehensive data retrieval: {str(e)}"
-            )
-
-    def get_all_invoice_data_for_date_range_with_progress(
-        self,
-        start_date: datetime,
-        end_date: datetime,
-        invoice_direction: InvoiceDirectionType = InvoiceDirectionType.OUTBOUND,
-        max_invoices: Optional[int] = None,
-        progress_callback: Optional[callable] = None,
-    ) -> List[InvoiceDetailType]:
-        """
-        Get all invoice data for a given date range with progress reporting.
-
-        Args:
-            start_date: Start date for the query range
-            end_date: End date for the query range
-            invoice_direction: Invoice direction to query (default: OUTBOUND)
-            max_invoices: Optional maximum number of invoices to process
-            progress_callback: Optional callback function for progress updates
-                             Called with (current_count, total_estimated, current_invoice_number)
-
-        Returns:
-            List[InvoiceDetail]: List of detailed invoice data
-
-        Raises:
-            NavValidationException: If parameters are invalid
-            NavApiException: If API requests fail
-        """
-        if start_date >= end_date:
-            raise NavValidationException("Start date must be before end date")
-
-        all_invoice_details = []
-        processed_count = 0
-        total_estimated = 0
-
-        try:
-            # First pass: count total invoices for progress estimation
-            logger.info("Estimating total invoice count...")
-            page = 1
-
-            while True:
-                date_range = DateIntervalParamType(
-                    date_from=start_date.strftime("%Y-%m-%d"),
-                    date_to=end_date.strftime("%Y-%m-%d"),
-                )
-
-                mandatory_params = MandatoryQueryParamsType(invoice_issue_date=date_range)
-
-                invoice_query_params = InvoiceQueryParamsType(
-                    mandatory_query_params=mandatory_params
-                )
-
-                digest_request = QueryInvoiceDigestRequest(
-                    page=page,
-                    invoice_direction=invoice_direction,
-                    invoice_query_params=invoice_query_params,
-                )
-
-                digest_response = self.query_invoice_digest(
-                    page=page,
-                    invoice_direction=invoice_direction,
-                    invoice_query_params=invoice_query_params
-                )
-
-                if not digest_response.invoice_digest_result or not digest_response.invoice_digest_result.invoice_digest:
-                    break
-
-                invoice_digests = digest_response.invoice_digest_result.invoice_digest
-                total_estimated += len(invoice_digests)
-
-                if (
-                    digest_response.invoice_digest_result.available_page is None
-                    or page >= digest_response.invoice_digest_result.available_page
-                ):
-                    break
-
-                page += 1
-
-            logger.info(f"Estimated total invoices: {total_estimated}")
-
-            # Apply max_invoices limit to estimation
-            if max_invoices:
-                total_estimated = min(total_estimated, max_invoices)
-
-            # Second pass: actual data retrieval with progress reporting
-            page = 1
-
-            while True:
-                date_range = DateIntervalParamType(
-                    date_from=start_date.strftime("%Y-%m-%d"),
-                    date_to=end_date.strftime("%Y-%m-%d"),
-                )
-
-                mandatory_params = MandatoryQueryParamsType(invoice_issue_date=date_range)
-
-                invoice_query_params = InvoiceQueryParamsType(
-                    mandatory_query_params=mandatory_params
-                )
-
-                digest_request = QueryInvoiceDigestRequest(
-                    page=page,
-                    invoice_direction=invoice_direction,
-                    invoice_query_params=invoice_query_params,
-                )
-
-                digest_response = self.query_invoice_digest(
-                    page=page,
-                    invoice_direction=invoice_direction,
-                    invoice_query_params=invoice_query_params
-                )
-
-                if not digest_response.invoice_digest_result or not digest_response.invoice_digest_result.invoice_digest:
-                    break
-
-                invoice_digests = digest_response.invoice_digest_result.invoice_digest
-                for digest in invoice_digests:
-                    if max_invoices and processed_count >= max_invoices:
-                        return all_invoice_details
-
-                    try:
-                        # For OUTBOUND invoices, don't include supplier_tax_number as it causes API error
-                        # For INBOUND invoices, include supplier_tax_number if available
-                        supplier_tax_for_request = None
-                        if invoice_direction == InvoiceDirectionType.INBOUND:
-                            supplier_tax_for_request = digest.supplier_tax_number
-
-                        data_request = QueryInvoiceDataRequest(
-                            invoice_number_query=InvoiceNumberQueryType(
-                                invoice_number=digest.invoice_number,
-                                invoice_direction=invoice_direction,
-                                batch_index=digest.batch_index,
-                                supplier_tax_number=supplier_tax_for_request
-                            )
-                        )
-
-                        invoice_detail = self.query_invoice_data(
-                            invoice_number=digest.invoice_number,
-                            invoice_direction=invoice_direction,
-                            batch_index=digest.batch_index,
-                            supplier_tax_number=supplier_tax_for_request
-                        )
-
-                        if invoice_detail:
-                            all_invoice_details.append(invoice_detail)
-                            processed_count += 1
-
-                            # Report progress
-                            if progress_callback:
-                                progress_callback(
-                                    processed_count,
-                                    total_estimated,
-                                    digest.invoice_number,
-                                )
-
-                    except Exception as e:
-                        logger.error(
-                            f"Error processing invoice {digest.invoice_number}: {str(e)}"
-                        )
-                        continue
-
-                if (
-                    digest_response.available_page is None
-                    or page >= digest_response.available_page
-                ):
-                    break
-
-                page += 1
-
-            return all_invoice_details
-
-        except (NavValidationException, NavApiException):
-            raise
-        except Exception as e:
-            logger.error(
-                f"Unexpected error in get_all_invoice_data_for_date_range_with_progress: {str(e)}"
             )
             raise NavApiException(
                 f"Unexpected error during comprehensive data retrieval: {str(e)}"
