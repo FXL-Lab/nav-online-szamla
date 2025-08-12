@@ -2,21 +2,16 @@
 Tests for utility functions.
 """
 
-import pytest
 from datetime import datetime
 
 from nav_online_szamla.utils import (
     generate_password_hash,
     generate_custom_id,
     calculate_request_signature,
-    validate_date_format,
-    validate_date_range,
     validate_tax_number,
     split_date_range,
     format_timestamp_for_nav,
-    is_network_error,
 )
-from nav_online_szamla.exceptions import NavValidationException
 
 
 class TestPasswordHash:
@@ -100,41 +95,6 @@ class TestRequestSignature:
         assert sig1 == sig2
 
 
-class TestDateValidation:
-    """Test date validation functions."""
-
-    def test_validate_date_format_valid(self):
-        """Test valid date format validation."""
-        assert validate_date_format("2024-01-01") is True
-        assert validate_date_format("2023-12-31") is True
-
-    def test_validate_date_format_invalid(self):
-        """Test invalid date format validation."""
-        assert validate_date_format("2024-1-1") is False
-        assert validate_date_format("01-01-2024") is False
-        assert validate_date_format("2024/01/01") is False
-        assert validate_date_format("invalid") is False
-
-    def test_validate_date_range_valid(self):
-        """Test valid date range validation."""
-        # Should not raise exception
-        validate_date_range("2024-01-01", "2024-01-31")
-        validate_date_range("2024-01-01", "2024-01-01")  # Same date
-
-    def test_validate_date_range_invalid_format(self):
-        """Test invalid date format in range validation."""
-        with pytest.raises(NavValidationException):
-            validate_date_range("2024-1-1", "2024-01-31")
-
-        with pytest.raises(NavValidationException):
-            validate_date_range("2024-01-01", "2024-1-31")
-
-    def test_validate_date_range_invalid_order(self):
-        """Test invalid date order in range validation."""
-        with pytest.raises(NavValidationException):
-            validate_date_range("2024-01-31", "2024-01-01")
-
-
 class TestTaxNumberValidation:
     """Test tax number validation."""
 
@@ -200,20 +160,3 @@ class TestTimestampFormatting:
         assert isinstance(formatted, str)
         assert formatted.endswith("Z")
         assert "T" in formatted
-
-
-class TestNetworkErrorDetection:
-    """Test network error detection."""
-
-    def test_is_network_error_positive(self):
-        """Test detection of network errors."""
-        assert is_network_error("Connection failed") is True
-        assert is_network_error("Timeout occurred") is True
-        assert is_network_error("Network unreachable") is True
-        assert is_network_error("Failed to resolve hostname") is True
-
-    def test_is_network_error_negative(self):
-        """Test detection of non-network errors."""
-        assert is_network_error("Invalid credentials") is False
-        assert is_network_error("XML parsing error") is False
-        assert is_network_error("Authentication failed") is False

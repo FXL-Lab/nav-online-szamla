@@ -7,7 +7,6 @@ This module provides the main client class for interacting with the NAV Online S
 import logging
 from datetime import datetime
 from typing import List, Optional
-from decimal import Decimal
 
 from xsdata.formats.dataclass.context import XmlContext
 from xsdata.formats.dataclass.serializers import XmlSerializer
@@ -27,15 +26,8 @@ from .config import (
 from .models import (
     # Official API types from generated models
     InvoiceDirectionType,
-    InvoiceDigestType,
-    QueryInvoiceChainDigestRequestType,
-    BasicResultType,
     BasicHeaderType,
-    ManageInvoiceOperationType,
-    SourceType,
-    FunctionCodeType,
     # Additional types from generated models
-    InvoiceDigestType,
     InvoiceDetailType,
     DateIntervalParamType,
     MandatoryQueryParamsType,
@@ -79,10 +71,7 @@ from .utils import (
     generate_custom_id,
     calculate_request_signature,
     validate_tax_number,
-    parse_xml_safely,
-    get_xml_element_value,
     format_timestamp_for_nav,
-    find_xml_elements_with_namespace_aware,
 )
 from .http_client import NavHttpClient
 

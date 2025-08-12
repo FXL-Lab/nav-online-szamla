@@ -73,59 +73,6 @@ def calculate_request_signature(
     return hash_object.hexdigest().upper()
 
 
-def validate_date_format(date_string: str) -> bool:
-    """
-    Validate date format (YYYY-MM-DD).
-
-    Args:
-        date_string: Date string to validate
-
-    Returns:
-        bool: True if valid, False otherwise
-    """
-    try:
-        # Check if the string matches the exact format YYYY-MM-DD
-        if len(date_string) != 10:
-            return False
-
-        if date_string.count("-") != 2:
-            return False
-
-        parts = date_string.split("-")
-        if len(parts[0]) != 4 or len(parts[1]) != 2 or len(parts[2]) != 2:
-            return False
-
-        # Try to parse the date
-        datetime.strptime(date_string, "%Y-%m-%d")
-        return True
-    except ValueError:
-        return False
-
-
-def validate_date_range(date_from: str, date_to: str) -> None:
-    """
-    Validate date range parameters.
-
-    Args:
-        date_from: Start date in YYYY-MM-DD format
-        date_to: End date in YYYY-MM-DD format
-
-    Raises:
-        NavValidationException: If date range is invalid
-    """
-    if not validate_date_format(date_from):
-        raise NavValidationException(f"Invalid date format for date_from: {date_from}")
-
-    if not validate_date_format(date_to):
-        raise NavValidationException(f"Invalid date format for date_to: {date_to}")
-
-    start_date = datetime.strptime(date_from, "%Y-%m-%d")
-    end_date = datetime.strptime(date_to, "%Y-%m-%d")
-
-    if start_date > end_date:
-        raise NavValidationException("Start date must be before or equal to end date")
-
-
 def validate_tax_number(tax_number: str) -> bool:
     """
     Validate Hungarian tax number format (8 digits).
@@ -231,84 +178,6 @@ def find_xml_elements_with_namespace_aware(
     return []
 
 
-def get_xml_element_float(
-    xml_doc: xml.dom.minidom.Document, tag_name: str, default_value: float = 0.0
-) -> float:
-    """
-    Get float value from an XML element.
-
-    Args:
-        xml_doc: XML document
-        tag_name: Tag name to search for
-        default_value: Default value if element not found or conversion fails
-
-    Returns:
-        float: Element float value or default value
-    """
-    try:
-        value_str = get_xml_element_value(xml_doc, tag_name)
-        if value_str:
-            return float(value_str)
-        return default_value
-    except (ValueError, TypeError):
-        return default_value
-
-
-def parse_xml_safely(xml_string: str) -> xml.dom.minidom.Document:
-    """
-    Safely parse XML string.
-
-    Args:
-        xml_string: XML string to parse
-
-    Returns:
-        xml.dom.minidom.Document: Parsed XML document
-
-    Raises:
-        NavXmlParsingException: If XML parsing fails
-    """
-    try:
-        return xml.dom.minidom.parseString(xml_string)
-    except Exception as e:
-        raise NavXmlParsingException(f"Failed to parse XML: {str(e)}")
-
-
-def get_nested_xml_element_value(
-    xml_doc: xml.dom.minidom.Document, xml_path: str
-) -> Optional[str]:
-    """
-    Get value from nested XML element using dot notation path.
-
-    Args:
-        xml_doc: XML document
-        xml_path: Dot-separated path to the element (e.g., 'parent.child.grandchild')
-
-    Returns:
-        Optional[str]: Element value or None if not found
-    """
-    try:
-        current_elements = [xml_doc]
-        path_parts = xml_path.split(".")
-
-        for part in path_parts:
-            next_elements = []
-            for element in current_elements:
-                if hasattr(element, "getElementsByTagName"):
-                    found = element.getElementsByTagName(part)
-                    next_elements.extend(found)
-
-            if not next_elements:
-                return None
-            current_elements = next_elements
-
-        if current_elements and current_elements[0].firstChild:
-            return current_elements[0].firstChild.data.strip()
-
-        return None
-    except Exception:
-        return None
-
-
 def format_timestamp_for_nav(dt: Optional[datetime] = None) -> str:
     """
     Format datetime for NAV API requests.
@@ -327,17 +196,3 @@ def format_timestamp_for_nav(dt: Optional[datetime] = None) -> str:
     # Keep only first 3 decimal places (microseconds -> milliseconds)
     timestamp_str = timestamp_str[:-3] + "Z"
     return timestamp_str
-
-
-def is_network_error(error_message: str) -> bool:
-    """
-    Check if error message indicates a network-related error.
-
-    Args:
-        error_message: Error message to check
-
-    Returns:
-        bool: True if network error, False otherwise
-    """
-    error_lower = error_message.lower()
-    return any(keyword in error_lower for keyword in NETWORK_ERROR_KEYWORDS)
