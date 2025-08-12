@@ -15,6 +15,7 @@ from nav_online_szamla.models import (
     InvoiceQueryParamsType,
     QueryInvoiceCheckRequest,
     InvoiceNumberQueryType,
+    TokenExchangeResponse,
 )
 from nav_online_szamla.exceptions import (
     NavApiException,
@@ -63,34 +64,79 @@ class TestNavOnlineInvoiceClient:
         """Test successful token exchange."""
         client = NavOnlineInvoiceClient(sample_credentials)
 
+        # Mock XML response matching TokenExchangeResponse structure
+        xml_response = """<?xml version="1.0" encoding="UTF-8"?>
+<TokenExchangeResponse xmlns="http://schemas.nav.gov.hu/OSA/3.0/api" xmlns:common="http://schemas.nav.gov.hu/NTCA/1.0/common">
+    <common:header>
+        <common:requestId>12345</common:requestId>
+        <common:timestamp>2024-01-01T10:00:00Z</common:timestamp>
+        <common:requestVersion>3.0</common:requestVersion>
+        <common:headerVersion>1.0</common:headerVersion>
+    </common:header>
+    <common:result>
+        <common:funcCode>OK</common:funcCode>
+    </common:result>
+    <software>
+        <softwareId>123456789012345678</softwareId>
+        <softwareName>Test Software</softwareName>
+        <softwareOperation>LOCAL_SOFTWARE</softwareOperation>
+        <softwareMainVersion>1.0</softwareMainVersion>
+        <softwareDevName>Test Developer</softwareDevName>
+        <softwareDevContact>test@example.com</softwareDevContact>
+        <softwareDevCountryCode>HU</softwareDevCountryCode>
+        <softwareDevTaxNumber>12345678</softwareDevTaxNumber>
+    </software>
+    <encodedExchangeToken>ZW5jb2RlZF90b2tlbl8xMjM=</encodedExchangeToken>
+    <tokenValidityFrom>2024-01-01T10:00:00Z</tokenValidityFrom>
+    <tokenValidityTo>2024-01-01T11:00:00Z</tokenValidityTo>
+</TokenExchangeResponse>"""
+
         with requests_mock.Mocker() as m:
             m.post(
                 f"{client.base_url}tokenExchange",
-                json={
-                    "result": {
-                        "funcCode": "OK",
-                        "encodedExchangeToken": "encoded_token_123",
-                    }
-                },
+                text=xml_response,
+                headers={'Content-Type': 'application/xml'}
             )
 
-            token = client.get_token()
-            assert token == "encoded_token_123"
+            response = client.get_token()
+            assert isinstance(response, TokenExchangeResponse)
+            assert response.encoded_exchange_token.decode('utf-8') == "encoded_token_123"
 
     def test_token_exchange_failure(self, sample_credentials):
         """Test token exchange failure."""
         client = NavOnlineInvoiceClient(sample_credentials)
 
+        # Mock XML error response
+        xml_error_response = """<?xml version="1.0" encoding="UTF-8"?>
+<TokenExchangeResponse xmlns="http://schemas.nav.gov.hu/OSA/3.0/api" xmlns:common="http://schemas.nav.gov.hu/NTCA/1.0/common">
+    <common:header>
+        <common:requestId>12345</common:requestId>
+        <common:timestamp>2024-01-01T10:00:00Z</common:timestamp>
+        <common:requestVersion>3.0</common:requestVersion>
+        <common:headerVersion>1.0</common:headerVersion>
+    </common:header>
+    <common:result>
+        <common:funcCode>ERROR</common:funcCode>
+        <common:errorCode>INVALID_CREDENTIALS</common:errorCode>
+        <common:message>Invalid authentication credentials</common:message>
+    </common:result>
+    <software>
+        <softwareId>123456789012345678</softwareId>
+        <softwareName>Test Software</softwareName>
+        <softwareOperation>LOCAL_SOFTWARE</softwareOperation>
+        <softwareMainVersion>1.0</softwareMainVersion>
+        <softwareDevName>Test Developer</softwareDevName>
+        <softwareDevContact>test@example.com</softwareDevContact>
+        <softwareDevCountryCode>HU</softwareDevCountryCode>
+        <softwareDevTaxNumber>12345678</softwareDevTaxNumber>
+    </software>
+</TokenExchangeResponse>"""
+
         with requests_mock.Mocker() as m:
             m.post(
                 f"{client.base_url}tokenExchange",
-                json={
-                    "result": {
-                        "funcCode": "ERROR",
-                        "errorCode": "INVALID_CREDENTIALS",
-                        "message": "Invalid authentication credentials",
-                    }
-                },
+                text=xml_error_response,
+                headers={'Content-Type': 'application/xml'}
             )
 
             with pytest.raises(NavApiException, match="INVALID_CREDENTIALS"):

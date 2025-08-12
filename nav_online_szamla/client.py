@@ -8,7 +8,6 @@ import logging
 from datetime import datetime
 from typing import List, Optional
 from decimal import Decimal
-import json
 
 from xsdata.formats.dataclass.context import XmlContext
 from xsdata.formats.dataclass.serializers import XmlSerializer
@@ -49,6 +48,9 @@ from .models import (
     QueryInvoiceCheckRequest,
     QueryInvoiceDataRequest,
     QueryInvoiceChainDigestRequest,
+    # Token exchange
+    TokenExchangeRequest,
+    TokenExchangeResponse,
     # Response wrappers 
     QueryInvoiceDataResponse,
     QueryInvoiceDigestResponse,
@@ -280,6 +282,19 @@ class NavOnlineInvoiceClient:
             page=page,
             invoice_direction=invoice_direction,
             invoice_query_params=invoice_query_params
+        )
+
+    def create_token_exchange_request(self) -> TokenExchangeRequest:
+        """Create a TokenExchangeRequest using generated models."""
+        
+        header = self._create_basic_header()
+        user = self._create_user_header(self.credentials, header)
+        software = self._create_software_info(self.credentials)
+        
+        return TokenExchangeRequest(
+            header=header,
+            user=user,
+            software=software
         )
 
     def create_query_invoice_data_request(
@@ -674,54 +689,52 @@ class NavOnlineInvoiceClient:
             logger.error(f"Unexpected error in get_invoice_data: {e}")
             raise NavApiException(f"Failed to get invoice data: {str(e)}")
 
-    def get_token(self) -> str:
+    def get_token(self) -> TokenExchangeResponse:
         """
-        Get exchange token from NAV API.
+        Get exchange token from NAV API using xsdata-generated dataclasses.
+        This uses automatic XML serialization and parsing for type-safe API interactions.
 
         Returns:
-            str: Exchange token
+            TokenExchangeResponse: Complete response with token and validity information
 
         Raises:
             NavValidationException: If credentials are invalid
             NavApiException: If API call fails
+            NavXmlParsingException: If XML parsing fails
         """
-        request_id = generate_custom_id()
-        timestamp = format_timestamp_for_nav(datetime.now())
-
-        # Build token exchange request
-        password_hash = generate_password_hash(self.credentials.password)
-        request_signature = calculate_request_signature(
-            request_id, timestamp, self.credentials.signer_key
-        )
-
-        request_data = {
-            "user": {
-                "login": self.credentials.login,
-                "passwordHash": password_hash,
-                "taxNumber": self.credentials.tax_number,
-                "requestSignature": request_signature,
-            }
-        }
-
-        with self.http_client as client:
-            headers = {"Content-Type": "application/json"}
-            response = client.post("/tokenExchange", json.dumps(request_data), headers)
-
         try:
-            response_data = response.json()
-        except ValueError:
-            raise NavApiException("Invalid JSON response from token exchange")
+            # Create request using helper method
+            request = self.create_token_exchange_request()
+            
+            # Serialize request to XML
+            xml_request = self._serialize_request_to_xml(request)
+            
+            # Make API call
+            with self.http_client as client:
+                response = client.post("tokenExchange", xml_request)
+                xml_response = response.text
 
-        if response_data.get("result", {}).get("funcCode") == "OK":
-            return response_data["result"]["encodedExchangeToken"]
-        else:
-            error_code = response_data.get("result", {}).get(
-                "errorCode", "UNKNOWN_ERROR"
-            )
-            message = response_data.get("result", {}).get(
-                "message", "Token exchange failed"
-            )
-            raise NavApiException(f"{error_code}: {message}")
+            # Parse response using generic parsing function
+            parsed_response = self._parse_response_from_xml(xml_response, TokenExchangeResponse)
+            
+            logger.info("Successfully obtained exchange token")
+            return parsed_response
+
+        except Exception as e:
+            if isinstance(e, (NavApiException, NavValidationException, NavXmlParsingException)):
+                raise
+            logger.error(f"Unexpected error in get_token: {e}")
+            raise NavApiException(f"Failed to get token: {str(e)}")
+
+    def get_exchange_token(self) -> str:
+        """
+        Convenience method to get just the encoded exchange token string.
+        
+        Returns:
+            str: The encoded exchange token
+        """
+        response = self.get_token()
+        return response.encoded_exchange_token.decode('utf-8')
 
     def check_invoice_exists(
         self,
