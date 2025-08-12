@@ -33,6 +33,7 @@ from .models import (
     MandatoryQueryParamsType,
     InvoiceQueryParamsType,
     CryptoType,
+    ManageInvoiceOperationType,
     # Query parameter types
     InvoiceNumberQueryType,
     # Request wrappers (root elements)
@@ -780,7 +781,7 @@ class NavOnlineInvoiceClient:
         start_date: datetime,
         end_date: datetime,
         invoice_direction: InvoiceDirectionType = InvoiceDirectionType.OUTBOUND,
-    ) -> List[InvoiceData]:
+    ) -> List[tuple[InvoiceData, ManageInvoiceOperationType]]:
         """
         Get all invoice data for a given date range by first querying invoice digests
         and then fetching detailed data for each invoice.
@@ -791,7 +792,8 @@ class NavOnlineInvoiceClient:
             invoice_direction: Invoice direction to query (default: OUTBOUND)
 
         Returns:
-            List[InvoiceData]: List of complete invoice data objects
+            List[tuple[InvoiceData, ManageInvoiceOperationType]]: List of tuples containing 
+            complete invoice data objects and their operation types
 
         Raises:
             NavValidationException: If parameters are invalid
@@ -872,7 +874,8 @@ class NavOnlineInvoiceClient:
                         )
 
                         if invoice_data:
-                            all_invoice_data.append(invoice_data)
+                            # Combine invoice data with operation type from digest
+                            all_invoice_data.append((invoice_data, digest.invoice_operation))
                             processed_count += 1
 
                             if processed_count % 10 == 0:
