@@ -65,6 +65,7 @@ from .models import (
     QueryInvoiceDataResponse,
     QueryInvoiceDataResponseType,
     QueryInvoiceDigestResponse,
+    QueryInvoiceCheckResponse,
     # Invoice data types
     InvoiceData,
     InvoiceDataType,
@@ -326,6 +327,33 @@ class NavOnlineInvoiceClient:
             software=software,
             invoice_number_query=invoice_number_query
         )
+
+    def create_query_invoice_check_request(
+        self,
+        invoice_number: str,
+        invoice_direction: InvoiceDirectionType,
+        batch_index: Optional[int] = None,
+        supplier_tax_number: Optional[str] = None
+    ) -> QueryInvoiceCheckRequest:
+        """Create a QueryInvoiceCheckRequest using generated models."""
+        
+        header = self._create_basic_header()
+        user = self._create_user_header(self.credentials, header)
+        software = self._create_software_info(self.credentials)
+        
+        invoice_number_query = InvoiceNumberQueryType(
+            invoice_number=invoice_number,
+            invoice_direction=invoice_direction,
+            batch_index=batch_index,
+            supplier_tax_number=supplier_tax_number
+        )
+        
+        return QueryInvoiceCheckRequest(
+            header=header,
+            user=user,
+            software=software,
+            invoice_number_query=invoice_number_query
+        )
         
     def query_invoice_data(
         self,
@@ -536,12 +564,9 @@ class NavOnlineInvoiceClient:
             logger.error(f"Unexpected error querying invoice digest: {e}")
             raise NavApiException(f"Failed to query invoice digest: {e}")
 
-    def get_token(self, credentials: NavCredentials) -> str:
+    def get_token(self) -> str:
         """
         Get exchange token from NAV API.
-
-        Args:
-            credentials: NAV API credentials
 
         Returns:
             str: Exchange token
@@ -550,22 +575,20 @@ class NavOnlineInvoiceClient:
             NavValidationException: If credentials are invalid
             NavApiException: If API call fails
         """
-        self.validate_credentials(credentials)
-
         request_id = generate_custom_id()
         timestamp = format_timestamp_for_nav(datetime.now())
 
         # Build token exchange request
-        password_hash = generate_password_hash(credentials.password)
+        password_hash = generate_password_hash(self.credentials.password)
         request_signature = calculate_request_signature(
-            request_id, timestamp, credentials.signer_key
+            request_id, timestamp, self.credentials.signer_key
         )
 
         request_data = {
             "user": {
-                "login": credentials.login,
+                "login": self.credentials.login,
                 "passwordHash": password_hash,
-                "taxNumber": credentials.tax_number,
+                "taxNumber": self.credentials.tax_number,
                 "requestSignature": request_signature,
             }
         }
@@ -590,68 +613,15 @@ class NavOnlineInvoiceClient:
             )
             raise NavApiException(f"{error_code}: {message}")
 
-    def _build_query_invoice_check_request_xml(
-        self, credentials: NavCredentials, request: QueryInvoiceCheckRequest
-    ) -> str:
-        """Build XML for QueryInvoiceCheck request according to API specification."""
-        request_id = generate_custom_id()
-        timestamp = format_timestamp_for_nav()
-        password_hash = generate_password_hash(credentials.password)
-        request_signature = calculate_request_signature(
-            request_id, timestamp, credentials.signer_key
-        )
-
-        batch_index_filter = ""
-        if request.invoice_number_query and request.invoice_number_query.batch_index is not None:
-            batch_index_filter = f"<batchIndex>{request.invoice_number_query.batch_index}</batchIndex>"
-
-        supplier_tax_filter = ""
-        if request.invoice_number_query and request.invoice_number_query.supplier_tax_number:
-            supplier_tax_filter = (
-                f"<supplierTaxNumber>{request.invoice_number_query.supplier_tax_number}</supplierTaxNumber>"
-            )
-
-        return f"""<?xml version="1.0" encoding="UTF-8"?>
-<QueryInvoiceCheckRequest xmlns="http://schemas.nav.gov.hu/OSA/3.0/api" xmlns:common="http://schemas.nav.gov.hu/NTCA/1.0/common">
-    <common:header>
-        <common:requestId>{request_id}</common:requestId>
-        <common:timestamp>{timestamp}</common:timestamp>
-        <common:requestVersion>3.0</common:requestVersion>
-        <common:headerVersion>1.0</common:headerVersion>
-    </common:header>
-    <common:user>
-        <common:login>{credentials.login}</common:login>
-        <common:passwordHash cryptoType="SHA-512">{password_hash}</common:passwordHash>
-        <common:taxNumber>{credentials.tax_number}</common:taxNumber>
-        <common:requestSignature cryptoType="SHA3-512">{request_signature}</common:requestSignature>
-    </common:user>
-    <software>
-        <softwareId>{SOFTWARE_ID}</softwareId>
-        <softwareName>{SOFTWARE_NAME}</softwareName>
-        <softwareOperation>LOCAL_SOFTWARE</softwareOperation>
-        <softwareMainVersion>{SOFTWARE_VERSION}</softwareMainVersion>
-        <softwareDevName>{SOFTWARE_DEV_NAME}</softwareDevName>
-        <softwareDevContact>{SOFTWARE_DEV_CONTACT}</softwareDevContact>
-        <softwareDevCountryCode>{SOFTWARE_DEV_COUNTRY}</softwareDevCountryCode>
-        <softwareDevTaxNumber>{credentials.tax_number}</softwareDevTaxNumber>
-    </software>
-    <invoiceNumberQuery>
-        <invoiceNumber>{request.invoice_number_query.invoice_number}</invoiceNumber>
-        <invoiceDirection>{request.invoice_number_query.invoice_direction.value}</invoiceDirection>
-        {supplier_tax_filter}
-        {batch_index_filter}
-    </invoiceNumberQuery>
-</QueryInvoiceCheckRequest>"""
-
     def _build_query_invoice_chain_digest_request_xml(
-        self, credentials: NavCredentials, request: QueryInvoiceChainDigestRequestType
+        self, request: QueryInvoiceChainDigestRequestType
     ) -> str:
         """Build XML for QueryInvoiceChainDigest request according to API specification."""
         request_id = generate_custom_id()
         timestamp = format_timestamp_for_nav()
-        password_hash = generate_password_hash(credentials.password)
+        password_hash = generate_password_hash(self.credentials.password)
         request_signature = calculate_request_signature(
-            request_id, timestamp, credentials.signer_key
+            request_id, timestamp, self.credentials.signer_key
         )
 
         tax_number_filter = ""
@@ -667,9 +637,9 @@ class NavOnlineInvoiceClient:
         <common:headerVersion>1.0</common:headerVersion>
     </common:header>
     <common:user>
-        <common:login>{credentials.login}</common:login>
+        <common:login>{self.credentials.login}</common:login>
         <common:passwordHash cryptoType="SHA-512">{password_hash}</common:passwordHash>
-        <common:taxNumber>{credentials.tax_number}</common:taxNumber>
+        <common:taxNumber>{self.credentials.tax_number}</common:taxNumber>
         <common:requestSignature cryptoType="SHA3-512">{request_signature}</common:requestSignature>
     </common:user>
     <software>
@@ -680,7 +650,7 @@ class NavOnlineInvoiceClient:
         <softwareDevName>{SOFTWARE_DEV_NAME}</softwareDevName>
         <softwareDevContact>{SOFTWARE_DEV_CONTACT}</softwareDevContact>
         <softwareDevCountryCode>{SOFTWARE_DEV_COUNTRY}</softwareDevCountryCode>
-        <softwareDevTaxNumber>{credentials.tax_number}</softwareDevTaxNumber>
+        <softwareDevTaxNumber>{self.credentials.tax_number}</softwareDevTaxNumber>
     </software>
     <page>{request.page}</page>
     <invoiceNumber>{request.invoice_number}</invoiceNumber>
@@ -860,66 +830,101 @@ class NavOnlineInvoiceClient:
     # New methods using API-compliant request types
 
     def query_invoice_check(
-        self, credentials: NavCredentials, request: QueryInvoiceCheckRequest
-    ) -> QueryInvoiceCheckResponseType:
+        self, request: QueryInvoiceCheckRequest
+    ) -> QueryInvoiceCheckResponse:
         """
-        Check if an invoice exists using the official API request structure.
+        Check if an invoice exists using xsdata-generated dataclasses.
+        This uses automatic XML serialization and parsing for type-safe API interactions.
 
         Args:
-            credentials: NAV API credentials
             request: QueryInvoiceCheckRequest with proper API structure
 
         Returns:
-            QueryInvoiceCheckResponseType: API-compliant response with check results
+            QueryInvoiceCheckResponse: Fully parsed response with typed check results
 
         Raises:
             NavValidationException: If request validation fails
             NavApiException: If API call fails
+            NavXmlParsingException: If XML parsing fails
         """
         try:
-            # Validate credentials
-            self.validate_credentials(credentials)
-
-            # Build XML request
-            xml_request = self._build_query_invoice_check_request_xml(
-                credentials, request
-            )
-
+            # Serialize request to XML
+            xml_request = self._serialize_request_to_xml(request)
+            
             # Make API call
             with self.http_client as client:
-                xml_response = client.post("/queryInvoiceCheck", xml_request)
+                response = client.post("queryInvoiceCheck", xml_request)
+                xml_response = response.text
 
-            # Parse response
-            try:
-                dom = parse_xml_safely(xml_response.text)
-                result_elements = find_xml_elements_with_namespace_aware(
-                    dom, "invoiceCheckResult"
-                )
+            # Parse response using generic parsing function
+            parsed_response = self._parse_response_from_xml(xml_response, QueryInvoiceCheckResponse)
+            
+            logger.info(f"Successfully checked invoice: {request.invoice_number_query.invoice_number}")
+            return parsed_response
 
-                if result_elements:
-                    return result_elements[0].firstChild.nodeValue.lower() == "true"
-                else:
-                    return False
-
-            except Exception as e:
-                raise NavXmlParsingException(
-                    f"Failed to parse invoice check response: {str(e)}"
-                )
-
-        except (NavValidationException, NavApiException):
-            raise
         except Exception as e:
-            logger.error(f"Unexpected error in query_invoice_check: {str(e)}")
-            raise NavApiException(f"Unexpected error: {str(e)}")
+            if isinstance(e, (NavApiException, NavValidationException, NavXmlParsingException)):
+                raise
+            logger.error(f"Unexpected error in query_invoice_check: {e}")
+            raise NavApiException(f"Failed to check invoice: {str(e)}")
+
+    def check_invoice_exists(
+        self,
+        invoice_number: str,
+        invoice_direction: InvoiceDirectionType = InvoiceDirectionType.OUTBOUND,
+        batch_index: Optional[int] = None,
+        supplier_tax_number: Optional[str] = None
+    ) -> bool:
+        """
+        Check if an invoice exists with a simplified interface.
+        
+        This function provides a high-level interface that:
+        1. Creates the request using the provided parameters
+        2. Calls query_invoice_check to get the API response
+        3. Returns a simple boolean result
+        
+        Args:
+            invoice_number: Invoice number to check
+            invoice_direction: Invoice direction (default: OUTBOUND)
+            batch_index: Optional batch index for batched invoices
+            supplier_tax_number: Optional supplier tax number
+            
+        Returns:
+            bool: True if invoice exists, False otherwise
+            
+        Raises:
+            NavValidationException: If parameters are invalid
+            NavApiException: If API request fails
+            NavXmlParsingException: If XML parsing fails
+        """
+        try:
+            # Create request using xsdata dataclasses
+            request = self.create_query_invoice_check_request(
+                invoice_number=invoice_number,
+                invoice_direction=invoice_direction,
+                batch_index=batch_index,
+                supplier_tax_number=supplier_tax_number
+            )
+            
+            # Get full response
+            response = self.query_invoice_check(request)
+            
+            # Extract boolean result
+            return response.invoice_check_result or False
+
+        except Exception as e:
+            if isinstance(e, (NavApiException, NavValidationException, NavXmlParsingException)):
+                raise
+            logger.error(f"Unexpected error in check_invoice_exists: {e}")
+            raise NavApiException(f"Failed to check if invoice exists: {str(e)}")
 
     def query_invoice_chain_digest(
-        self, credentials: NavCredentials, request: QueryInvoiceChainDigestRequest
+        self, request: QueryInvoiceChainDigestRequest
     ) -> List[InvoiceDigestType]:
         """
         Query invoice chain digests using the official API request structure.
 
         Args:
-            credentials: NAV API credentials
             request: QueryInvoiceChainDigestRequest with proper API structure
 
         Returns:
@@ -930,13 +935,8 @@ class NavOnlineInvoiceClient:
             NavApiException: If API call fails
         """
         try:
-            # Validate credentials
-            self.validate_credentials(credentials)
-
             # Build XML request
-            xml_request = self._build_query_invoice_chain_digest_request_xml(
-                credentials, request
-            )
+            xml_request = self._build_query_invoice_chain_digest_request_xml(request)
 
             # Make API call
             with self.http_client as client:

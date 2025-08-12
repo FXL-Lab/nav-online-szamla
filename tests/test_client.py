@@ -74,7 +74,7 @@ class TestNavOnlineInvoiceClient:
                 },
             )
 
-            token = client.get_token(sample_credentials)
+            token = client.get_token()
             assert token == "encoded_token_123"
 
     def test_token_exchange_failure(self, sample_credentials):
@@ -94,7 +94,7 @@ class TestNavOnlineInvoiceClient:
             )
 
             with pytest.raises(NavApiException, match="INVALID_CREDENTIALS"):
-                client.get_token(sample_credentials)
+                client.get_token()
 
     def test_query_invoice_digest_success(self, sample_credentials):
         """Test successful invoice digest query."""
@@ -241,25 +241,19 @@ class TestNavOnlineInvoiceClient:
             # Mock query invoice check
             m.post(
                 f"{client.base_url}queryInvoiceCheck",
-                text="""<?xml version="1.0" encoding="UTF-8"?>
-                <QueryInvoiceCheckResponse>
-                    <header>
-                        <requestId>test-123</requestId>
-                        <timestamp>2023-01-01T12:00:00Z</timestamp>
-                        <requestVersion>3.0</requestVersion>
-                        <headerVersion>1.0</headerVersion>
-                    </header>
-                    <r>
-                        <funcCode>OK</funcCode>
-                    </r>
-                    <invoiceCheckResult>
-                        <queryResults>
-                            <invoiceNumber>TEST001</invoiceNumber>
-                            <batchIndex>1</batchIndex>
-                            <invoiceDirection>OUTBOUND</invoiceDirection>
-                            <queryResultCode>FOUND</queryResultCode>
-                        </queryResults>
-                    </invoiceCheckResult>
+                text="""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+                <QueryInvoiceCheckResponse xmlns="http://schemas.nav.gov.hu/OSA/3.0/api" 
+                                         xmlns:ns2="http://schemas.nav.gov.hu/NTCA/1.0/common">
+                    <ns2:header>
+                        <ns2:requestId>test-123</ns2:requestId>
+                        <ns2:timestamp>2023-01-01T12:00:00Z</ns2:timestamp>
+                        <ns2:requestVersion>3.0</ns2:requestVersion>
+                        <ns2:headerVersion>1.0</ns2:headerVersion>
+                    </ns2:header>
+                    <ns2:result>
+                        <ns2:funcCode>OK</ns2:funcCode>
+                    </ns2:result>
+                    <invoiceCheckResult>true</invoiceCheckResult>
                 </QueryInvoiceCheckResponse>""",
             )
 
@@ -271,7 +265,9 @@ class TestNavOnlineInvoiceClient:
                 )
             )
 
-            result = client.query_invoice_check(sample_credentials, request)
+            result = client.query_invoice_check(request)
 
-            # For now, just check that we get some result
+            # Check that we get a QueryInvoiceCheckResponse with the expected structure
             assert result is not None
+            assert hasattr(result, 'invoice_check_result')
+            assert result.invoice_check_result is True
