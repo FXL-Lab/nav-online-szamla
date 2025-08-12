@@ -68,6 +68,9 @@ from .models import (
     InvoiceData,
     InvoiceDataType,
     QueryInvoiceChainDigestRequest,
+    # Additional imports needed in the file
+    InvoiceMainType,
+    InvoiceHeadType,
     # Common types
     UserHeaderType,
     SoftwareType,
@@ -401,7 +404,6 @@ class NavOnlineInvoiceClient:
                         xml_content = xml_bytes.decode('utf-8', errors='replace')
                     
                     # Parse the decoded XML into InvoiceData object
-                    from nav_online_szamla.models import InvoiceData
                     parsed_invoice_data = self._parse_response_from_xml(xml_content, InvoiceData)
                     
                     # Replace the bytes with the parsed object
@@ -1716,7 +1718,6 @@ class NavOnlineInvoiceClient:
 
             # Create a simple InvoiceDataType with just the basic required fields
             # We'll create a minimal InvoiceMainType to satisfy the required field
-            from .models import InvoiceMainType, InvoiceHeadType
             
             # Create minimal invoice head
             invoice_head = InvoiceHeadType(

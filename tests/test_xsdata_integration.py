@@ -6,7 +6,7 @@ import pytest
 import requests_mock
 from nav_online_szamla.client import NavOnlineInvoiceClient
 from nav_online_szamla.models_legacy import NavCredentials
-from nav_online_szamla.models import InvoiceDirectionType, QueryInvoiceDataResponse
+from nav_online_szamla.models import InvoiceDirectionType, QueryInvoiceDataResponse, InvoiceData
 from nav_online_szamla.exceptions import (
     NavApiException,
     NavValidationException,
@@ -116,7 +116,6 @@ class TestXsdataIntegration:
             assert response.invoice_data_result.audit_data.source.value == "OSZ"  # source is also an enum
             
             # Verify that invoice_data has been parsed into an InvoiceData object
-            from nav_online_szamla.models import InvoiceData
             print(response.invoice_data_result.invoice_data)
             assert isinstance(response.invoice_data_result.invoice_data, InvoiceData)
             assert response.invoice_data_result.invoice_data.invoice_number == "FXL-2025-6"
