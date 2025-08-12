@@ -4,9 +4,18 @@ Test for query_invoice_data_with_xsdata and the generic parsing functionality.
 
 import pytest
 import requests_mock
+from datetime import datetime
 from nav_online_szamla.client import NavOnlineInvoiceClient
 from nav_online_szamla.models_legacy import NavCredentials
-from nav_online_szamla.models import InvoiceDirectionType, QueryInvoiceDataResponse, InvoiceData
+from nav_online_szamla.models import (
+    InvoiceDirectionType, 
+    QueryInvoiceDataResponse, 
+    InvoiceData,
+    QueryInvoiceDigestResponse,
+    InvoiceQueryParamsType,
+    MandatoryQueryParamsType,
+    DateIntervalParamType
+)
 from nav_online_szamla.exceptions import (
     NavApiException,
     NavValidationException,
@@ -84,6 +93,55 @@ class TestXsdataIntegration:
         <ns2:message>Invoice not found</ns2:message>
     </ns2:result>
 </QueryInvoiceDataResponse>'''
+
+    def _get_sample_digest_response_xml(self):
+        """Return a sample digest response XML based on real NAV API response."""
+        return '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<QueryInvoiceDigestResponse xmlns="http://schemas.nav.gov.hu/OSA/3.0/api" 
+                           xmlns:ns2="http://schemas.nav.gov.hu/NTCA/1.0/common" 
+                           xmlns:ns3="http://schemas.nav.gov.hu/OSA/3.0/base">
+    <ns2:header>
+        <ns2:requestId>digest-request-456</ns2:requestId>
+        <ns2:timestamp>2025-08-12T08:19:22.183Z</ns2:timestamp>
+        <ns2:requestVersion>3.0</ns2:requestVersion>
+        <ns2:headerVersion>1.0</ns2:headerVersion>
+    </ns2:header>
+    <ns2:result>
+        <ns2:funcCode>OK</ns2:funcCode>
+    </ns2:result>
+    <software>
+        <softwareId>NAVPYTHONCLIENT123</softwareId>
+        <softwareName>NAV Python Client</softwareName>
+        <softwareOperation>LOCAL_SOFTWARE</softwareOperation>
+        <softwareMainVersion>1.0</softwareMainVersion>
+        <softwareDevName>Python NAV Client</softwareDevName>
+        <softwareDevContact>support@example.com</softwareDevContact>
+        <softwareDevCountryCode>HU</softwareDevCountryCode>
+        <softwareDevTaxNumber>32703094</softwareDevTaxNumber>
+    </software>
+    <invoiceDigestResult>
+        <currentPage>1</currentPage>
+        <availablePage>1</availablePage>
+        <invoiceDigest>
+            <invoiceNumber>FXL-2025-1</invoiceNumber>
+            <invoiceOperation>CREATE</invoiceOperation>
+            <invoiceCategory>NORMAL</invoiceCategory>
+            <invoiceIssueDate>2025-07-01</invoiceIssueDate>
+            <supplierTaxNumber>32703094</supplierTaxNumber>
+            <supplierName>FXL KORLÃTOLT FELELÅGÅ° TÃRSASÃG</supplierName>
+            <insDate>2025-07-01T22:01:45Z</insDate>
+        </invoiceDigest>
+        <invoiceDigest>
+            <invoiceNumber>FXL-2025-2</invoiceNumber>
+            <invoiceOperation>CREATE</invoiceOperation>
+            <invoiceCategory>NORMAL</invoiceCategory>
+            <invoiceIssueDate>2025-07-02</invoiceIssueDate>
+            <supplierTaxNumber>32703094</supplierTaxNumber>
+            <supplierName>FXL KORLÃTOLT FELELÅGÅ° TÃRSASÃG</supplierName>
+            <insDate>2025-07-02T22:01:45Z</insDate>
+        </invoiceDigest>
+    </invoiceDigestResult>
+</QueryInvoiceDigestResponse>'''
 
     def test_query_invoice_data_with_xsdata_success(self):
         """Test successful invoice data query using xsdata."""
@@ -257,6 +315,271 @@ class TestXsdataIntegration:
         assert 'common:user' in xml_output
         assert 'ns0:' not in xml_output  # Should not have ns0 prefixes
         assert 'ns1:' not in xml_output  # Should not have ns1 prefixes
+
+    def test_query_invoice_digest_with_xsdata_success(self):
+        """Test successful invoice digest query using xsdata."""
+        credentials = self._get_test_credentials()
+        client = NavOnlineInvoiceClient(credentials)
+
+        with requests_mock.Mocker() as m:
+            # Mock the API response
+            m.post(
+                f"{client.base_url}queryInvoiceDigest",
+                text=self._get_sample_digest_response_xml(),
+                status_code=200
+            )
+
+            # Create query parameters
+            date_interval = DateIntervalParamType(
+                date_from="2025-07-01",
+                date_to="2025-07-31"
+            )
+            
+            mandatory_params = MandatoryQueryParamsType(
+                invoice_issue_date=date_interval
+            )
+            
+            query_params = InvoiceQueryParamsType(
+                mandatory_query_params=mandatory_params
+            )
+
+            # Test the method
+            response = client.query_invoice_digest_with_xsdata(
+                page=1,
+                invoice_direction=InvoiceDirectionType.OUTBOUND,
+                invoice_query_params=query_params
+            )
+
+            # Verify response type and structure
+            assert isinstance(response, QueryInvoiceDigestResponse)
+            assert response.result.func_code.value == "OK"
+            assert response.invoice_digest_result is not None
+            assert response.invoice_digest_result.current_page == 1
+            assert response.invoice_digest_result.available_page == 1
+            
+            # Verify invoice digests
+            assert len(response.invoice_digest_result.invoice_digest) == 2
+            
+            first_digest = response.invoice_digest_result.invoice_digest[0]
+            assert first_digest.invoice_number == "FXL-2025-1"
+            assert first_digest.invoice_operation.value == "CREATE"
+            assert first_digest.supplier_tax_number == "32703094"
+            assert first_digest.supplier_name == "FXL KORLÃTOLT FELELÅGÅ° TÃRSASÃG"
+
+    def test_query_invoice_digest_with_xsdata_validation_error(self):
+        """Test validation error when page is invalid."""
+        credentials = self._get_test_credentials()
+        client = NavOnlineInvoiceClient(credentials)
+
+        # Create valid query parameters
+        date_interval = DateIntervalParamType(
+            date_from="2025-07-01",
+            date_to="2025-07-31"
+        )
+        
+        mandatory_params = MandatoryQueryParamsType(
+            invoice_issue_date=date_interval
+        )
+        
+        query_params = InvoiceQueryParamsType(
+            mandatory_query_params=mandatory_params
+        )
+
+        with pytest.raises(NavValidationException, match="Page number must be >= 1"):
+            client.query_invoice_digest_with_xsdata(
+                page=0,  # Invalid page number
+                invoice_direction=InvoiceDirectionType.OUTBOUND,
+                invoice_query_params=query_params
+            )
+
+    def test_query_invoice_digest_with_xsdata_missing_params(self):
+        """Test validation error when query params are missing."""
+        credentials = self._get_test_credentials()
+        client = NavOnlineInvoiceClient(credentials)
+
+        with pytest.raises(NavValidationException, match="Invoice query parameters are required"):
+            client.query_invoice_digest_with_xsdata(
+                page=1,
+                invoice_direction=InvoiceDirectionType.OUTBOUND,
+                invoice_query_params=None
+            )
+
+    def test_create_query_invoice_digest_request(self):
+        """Test digest request creation using xsdata dataclasses."""
+        credentials = self._get_test_credentials()
+        client = NavOnlineInvoiceClient(credentials)
+
+        # Create query parameters
+        date_interval = DateIntervalParamType(
+            date_from="2025-07-01",
+            date_to="2025-07-31"
+        )
+        
+        mandatory_params = MandatoryQueryParamsType(
+            invoice_issue_date=date_interval
+        )
+        
+        query_params = InvoiceQueryParamsType(
+            mandatory_query_params=mandatory_params
+        )
+
+        # Test request creation
+        request = client.create_query_invoice_digest_request(
+            credentials=credentials,
+            page=1,
+            invoice_direction=InvoiceDirectionType.OUTBOUND,
+            invoice_query_params=query_params
+        )
+
+        # Verify request structure
+        assert request.header is not None
+        assert request.user is not None
+        assert request.software is not None
+        assert request.page == 1
+        assert request.invoice_direction == InvoiceDirectionType.OUTBOUND
+        assert request.invoice_query_params is not None
+        assert request.invoice_query_params.mandatory_query_params is not None
+        assert request.invoice_query_params.mandatory_query_params.invoice_issue_date.date_from == "2025-07-01"
+        assert request.invoice_query_params.mandatory_query_params.invoice_issue_date.date_to == "2025-07-31"
+
+    def test_serialize_digest_request_to_xml(self):
+        """Test XML serialization of digest requests with actual generated XML structure."""
+        credentials = self._get_test_credentials()
+        client = NavOnlineInvoiceClient(credentials)
+
+        # Create query parameters
+        date_interval = DateIntervalParamType(
+            date_from="2025-07-01",
+            date_to="2025-07-31"
+        )
+        
+        mandatory_params = MandatoryQueryParamsType(
+            invoice_issue_date=date_interval
+        )
+        
+        query_params = InvoiceQueryParamsType(
+            mandatory_query_params=mandatory_params
+        )
+
+        # Create a request
+        request = client.create_query_invoice_digest_request(
+            credentials=credentials,
+            page=1,
+            invoice_direction=InvoiceDirectionType.OUTBOUND,
+            invoice_query_params=query_params
+        )
+
+        # Serialize to XML
+        xml_output = client._serialize_request_to_xml(request)
+
+        # Verify XML structure
+        assert xml_output.startswith('<?xml version="1.0" encoding="UTF-8"?>')
+        assert 'QueryInvoiceDigestRequest' in xml_output
+        assert 'xmlns="http://schemas.nav.gov.hu/OSA/3.0/api"' in xml_output
+        assert 'xmlns:common="http://schemas.nav.gov.hu/NTCA/1.0/common"' in xml_output
+        assert '<page>1</page>' in xml_output
+        assert 'OUTBOUND' in xml_output
+        assert '2025-07-01' in xml_output
+        assert '2025-07-31' in xml_output
+        
+        # Verify proper namespace formatting
+        assert 'common:header' in xml_output
+        assert 'common:user' in xml_output
+        assert 'ns0:' not in xml_output  # Should not have ns0 prefixes
+        assert 'ns1:' not in xml_output  # Should not have ns1 prefixes
+        
+        # Verify request structure elements
+        assert '<common:requestId>' in xml_output
+        assert '<common:timestamp>' in xml_output
+        assert '<common:requestVersion>3.0</common:requestVersion>' in xml_output
+        assert '<common:headerVersion>1.0</common:headerVersion>' in xml_output
+        assert '<common:login>test_user</common:login>' in xml_output  # Use test credentials
+        assert '<common:taxNumber>12345678</common:taxNumber>' in xml_output  # Use test credentials
+        assert '<softwareId>NAVPYTHONCLIENT123</softwareId>' in xml_output
+        assert '<softwareName>NAV Python Client</softwareName>' in xml_output
+        assert '<invoiceDirection>OUTBOUND</invoiceDirection>' in xml_output
+        assert '<mandatoryQueryParams>' in xml_output
+        assert '<invoiceIssueDate>' in xml_output
+        assert '<dateFrom>2025-07-01</dateFrom>' in xml_output
+        assert '<dateTo>2025-07-31</dateTo>' in xml_output
+        
+    def test_digest_request_xml_structure_detailed(self):
+        """Test detailed XML structure verification with actual generated XML."""
+        credentials = self._get_test_credentials()
+        client = NavOnlineInvoiceClient(credentials)
+
+        # Create query parameters with specific date range
+        date_interval = DateIntervalParamType(
+            date_from="2025-07-01",
+            date_to="2025-07-31"
+        )
+        
+        mandatory_params = MandatoryQueryParamsType(
+            invoice_issue_date=date_interval
+        )
+        
+        query_params = InvoiceQueryParamsType(
+            mandatory_query_params=mandatory_params
+        )
+
+        # Create a request
+        request = client.create_query_invoice_digest_request(
+            credentials=credentials,
+            page=1,
+            invoice_direction=InvoiceDirectionType.OUTBOUND,
+            invoice_query_params=query_params
+        )
+
+        # Serialize to XML
+        xml_output = client._serialize_request_to_xml(request)
+        
+        # Expected XML structure components (based on actual generated XML)
+        expected_elements = [
+            '<?xml version="1.0" encoding="UTF-8"?>',
+            '<QueryInvoiceDigestRequest xmlns="http://schemas.nav.gov.hu/OSA/3.0/api"',
+            'xmlns:common="http://schemas.nav.gov.hu/NTCA/1.0/common">',
+            '<common:header>',
+            '<common:requestVersion>3.0</common:requestVersion>',
+            '<common:headerVersion>1.0</common:headerVersion>',
+            '</common:header>',
+            '<common:user>',
+            '<common:login>test_user</common:login>',  # Use test credentials
+            '<common:taxNumber>12345678</common:taxNumber>',  # Use test credentials
+            '</common:user>',
+            '<software>',
+            '<softwareId>NAVPYTHONCLIENT123</softwareId>',
+            '<softwareName>NAV Python Client</softwareName>',
+            '<softwareOperation>LOCAL_SOFTWARE</softwareOperation>',
+            '<softwareMainVersion>1.0</softwareMainVersion>',
+            '<softwareDevName>Python NAV Client</softwareDevName>',
+            '<softwareDevContact>support@example.com</softwareDevContact>',
+            '<softwareDevCountryCode>HU</softwareDevCountryCode>',
+            '<softwareDevTaxNumber>12345678</softwareDevTaxNumber>',  # Use test credentials
+            '</software>',
+            '<page>1</page>',
+            '<invoiceDirection>OUTBOUND</invoiceDirection>',
+            '<invoiceQueryParams>',
+            '<mandatoryQueryParams>',
+            '<invoiceIssueDate>',
+            '<dateFrom>2025-07-01</dateFrom>',
+            '<dateTo>2025-07-31</dateTo>',
+            '</invoiceIssueDate>',
+            '</mandatoryQueryParams>',
+            '</invoiceQueryParams>',
+            '</QueryInvoiceDigestRequest>'
+        ]
+        
+        # Verify all expected elements are present
+        for element in expected_elements:
+            assert element in xml_output, f"Missing element: {element}"
+        
+        # Verify the XML can be parsed and contains valid structure
+        assert xml_output.count('<QueryInvoiceDigestRequest') == 1
+        assert xml_output.count('</QueryInvoiceDigestRequest>') == 1
+        assert xml_output.count('<common:header>') == 1
+        assert xml_output.count('</common:header>') == 1
+        assert xml_output.count('<common:user>') == 1
+        assert xml_output.count('</common:user>') == 1
 
 
 if __name__ == "__main__":

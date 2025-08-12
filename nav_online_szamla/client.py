@@ -64,6 +64,7 @@ from .models import (
     # Response wrappers 
     QueryInvoiceDataResponse,
     QueryInvoiceDataResponseType,
+    QueryInvoiceDigestResponse,
     # Invoice data types
     InvoiceData,
     InvoiceDataType,
@@ -388,24 +389,19 @@ class NavOnlineInvoiceClient:
                     # but it's in bytes format containing XML
                     xml_bytes = parsed_response.invoice_data_result.invoice_data
                     
-                    # Try multiple encodings to decode bytes to XML string
-                    xml_content = None
-                    for encoding in ['utf-8', 'latin-1', 'cp1252']:
+                    # Try UTF-8 first, then fall back to other encodings
+                    try:
+                        xml_content = xml_bytes.decode('utf-8')
+                    except UnicodeDecodeError:
                         try:
-                            logger.info(f"Trying to decode with {encoding}")
-                            xml_content = xml_bytes.decode(encoding)
-                            logger.info(f"Successfully decoded with {encoding}")
-                            break
+                            # Try latin-1 which can handle any byte sequence
+                            xml_content = xml_bytes.decode('latin-1')
                         except UnicodeDecodeError:
-                            continue
-                    
-                    if xml_content is None:
-                        # Last resort - decode with error replacement
-                        xml_content = xml_bytes.decode('utf-8', errors='replace')
+                            # Last resort - decode with error replacement
+                            xml_content = xml_bytes.decode('utf-8', errors='replace')
                     
                     # Parse the decoded XML into InvoiceData object
                     parsed_invoice_data = self._parse_response_from_xml(xml_content, InvoiceData)
-                    
                     # Replace the bytes with the parsed object
                     parsed_response.invoice_data_result.invoice_data = parsed_invoice_data
                     logger.info(f"Successfully parsed invoice data XML for {invoice_number}")
@@ -422,46 +418,6 @@ class NavOnlineInvoiceClient:
                 raise
             logger.error(f"Unexpected error querying invoice data: {e}")
             raise NavApiException(f"Failed to query invoice data: {e}")
-
-    def demonstrate_xsdata_serialization(self, credentials: NavCredentials) -> str:
-        """
-        Demonstrate how to create and serialize requests using xsdata.
-        
-        This method shows how the new approach works:
-        1. Create request objects using generated dataclasses
-        2. Serialize to XML automatically with xsdata
-        3. No manual XML string building required
-        """
-        
-        # Example: Create a simple date range query
-        date_range = DateIntervalParamType(
-            date_from="2024-01-01",
-            date_to="2024-01-31"
-        )
-        
-        mandatory_params = MandatoryQueryParamsType(
-            invoice_issue_date=date_range
-        )
-        
-        invoice_query_params = InvoiceQueryParamsType(
-            mandatory_query_params=mandatory_params
-        )
-        
-        # Create the request
-        request = self.create_query_invoice_digest_request(
-            credentials=credentials,
-            page=1,
-            invoice_direction=InvoiceDirectionType.OUTBOUND,
-            invoice_query_params=invoice_query_params
-        )
-        
-        # Serialize to XML
-        xml_output = self._serialize_request_to_xml(request)
-        
-        logger.info("Generated XML using xsdata:")
-        logger.info(xml_output)
-        
-        return xml_output
 
     def get_invoice_data(
         self,
@@ -548,6 +504,64 @@ class NavOnlineInvoiceClient:
                 raise
             logger.error(f"Unexpected error in get_invoice_data: {e}")
             raise NavApiException(f"Failed to get invoice data: {str(e)}")
+
+    def query_invoice_digest_with_xsdata(
+        self,
+        page: int,
+        invoice_direction: InvoiceDirectionType,
+        invoice_query_params: InvoiceQueryParamsType
+    ) -> QueryInvoiceDigestResponse:
+        """
+        Query invoice digest using xsdata-generated dataclasses.
+        This demonstrates the new approach using automatic XML serialization and parsing.
+        
+        Args:
+            page: Page number for pagination (1-based)
+            invoice_direction: Invoice direction (OUTBOUND/INBOUND)
+            invoice_query_params: Query parameters (date range, supplier info, etc.)
+            
+        Returns:
+            QueryInvoiceDigestResponse: Fully parsed response with typed invoice digests
+            
+        Raises:
+            NavValidationException: If parameters are invalid
+            NavApiException: If API request fails
+            NavXmlParsingException: If XML parsing fails
+        """
+        if page < 1:
+            raise NavValidationException("Page number must be >= 1")
+
+        if not invoice_query_params:
+            raise NavValidationException("Invoice query parameters are required")
+
+        try:
+            # Create request using xsdata dataclasses
+            request = self.create_query_invoice_digest_request(
+                credentials=self.credentials,
+                page=page,
+                invoice_direction=invoice_direction,
+                invoice_query_params=invoice_query_params
+            )
+            
+            # Serialize request to XML
+            xml_request = self._serialize_request_to_xml(request)
+            
+            # Make API call
+            with self.http_client as client:
+                response = client.post("queryInvoiceDigest", xml_request)
+                xml_response = response.text
+            
+            # Parse response using generic parsing function
+            parsed_response = self._parse_response_from_xml(xml_response, QueryInvoiceDigestResponse)
+            
+            logger.info(f"Successfully queried invoice digest for page {page}")
+            return parsed_response
+
+        except Exception as e:
+            if isinstance(e, (NavValidationException, NavApiException, NavXmlParsingException)):
+                raise
+            logger.error(f"Unexpected error querying invoice digest: {e}")
+            raise NavApiException(f"Failed to query invoice digest: {e}")
 
 
     def get_token(self, credentials: NavCredentials) -> str:
