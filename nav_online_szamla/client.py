@@ -421,7 +421,6 @@ class NavOnlineInvoiceClient:
 
     def get_invoice_data(
         self,
-        credentials: NavCredentials,
         invoice_number: str,
         invoice_direction: InvoiceDirectionType = InvoiceDirectionType.OUTBOUND,
         batch_index: Optional[int] = None,
@@ -436,7 +435,6 @@ class NavOnlineInvoiceClient:
         3. Returns a typed InvoiceData dataclass
         
         Args:
-            credentials: NAV API credentials
             invoice_number: Invoice number to query
             invoice_direction: Invoice direction (default: OUTBOUND)
             batch_index: Optional batch index for batched invoices
@@ -451,13 +449,6 @@ class NavOnlineInvoiceClient:
             NavApiException: If API request fails
             NavXmlParsingException: If XML parsing fails
         """
-        # Validate credentials (query_invoice_data will use self.credentials, but we validate the passed ones)
-        self.validate_credentials(credentials)
-        
-        # Temporarily store the current credentials and use the provided ones
-        original_credentials = self.credentials
-        self.credentials = credentials
-        
         try:
             # Use query_invoice_data to get the full API response
             response = self.query_invoice_data(
@@ -486,9 +477,6 @@ class NavOnlineInvoiceClient:
                 raise
             logger.error(f"Unexpected error in get_invoice_data: {e}")
             raise NavApiException(f"Failed to get invoice data: {str(e)}")
-        finally:
-            # Restore the original credentials
-            self.credentials = original_credentials
 
     def query_invoice_digest(
         self,
@@ -965,7 +953,6 @@ class NavOnlineInvoiceClient:
 
     def get_all_invoice_data_for_date_range(
         self,
-        credentials: NavCredentials,
         start_date: datetime,
         end_date: datetime,
         invoice_direction: InvoiceDirectionType = InvoiceDirectionType.OUTBOUND,
@@ -975,7 +962,6 @@ class NavOnlineInvoiceClient:
         and then fetching detailed data for each invoice.
 
         Args:
-            credentials: NAV API credentials
             start_date: Start date for the query range
             end_date: End date for the query range
             invoice_direction: Invoice direction to query (default: OUTBOUND)
@@ -987,8 +973,6 @@ class NavOnlineInvoiceClient:
             NavValidationException: If parameters are invalid
             NavApiException: If API requests fail
         """
-        self.validate_credentials(credentials)
-
         if start_date >= end_date:
             raise NavValidationException("Start date must be before end date")
 
@@ -1036,7 +1020,11 @@ class NavOnlineInvoiceClient:
                 )
 
                 # Query invoice digests
-                digest_response = self.query_invoice_digest(credentials, digest_request)
+                digest_response = self.query_invoice_digest(
+                    page=page,
+                    invoice_direction=invoice_direction,
+                    invoice_query_params=invoice_query_params
+                )
 
                 if not digest_response.invoice_digest_result or not digest_response.invoice_digest_result.invoice_digest:
                     logger.info(f"No more invoices found on page {page}")
@@ -1073,7 +1061,10 @@ class NavOnlineInvoiceClient:
 
                         # Get detailed invoice data
                         invoice_detail = self.query_invoice_data(
-                            credentials, data_request
+                            invoice_number=digest.invoice_number,
+                            invoice_direction=invoice_direction,
+                            batch_index=digest.batch_index,
+                            supplier_tax_number=supplier_tax_for_request
                         )
 
                         if invoice_detail:
@@ -1128,7 +1119,6 @@ class NavOnlineInvoiceClient:
 
     def get_all_invoice_data_for_date_range_with_progress(
         self,
-        credentials: NavCredentials,
         start_date: datetime,
         end_date: datetime,
         invoice_direction: InvoiceDirectionType = InvoiceDirectionType.OUTBOUND,
@@ -1139,10 +1129,9 @@ class NavOnlineInvoiceClient:
         Get all invoice data for a given date range with progress reporting.
 
         Args:
-            credentials: NAV API credentials
             start_date: Start date for the query range
             end_date: End date for the query range
-            invoice_direction: Invoice direction to query (default: BOTH)
+            invoice_direction: Invoice direction to query (default: OUTBOUND)
             max_invoices: Optional maximum number of invoices to process
             progress_callback: Optional callback function for progress updates
                              Called with (current_count, total_estimated, current_invoice_number)
@@ -1154,8 +1143,6 @@ class NavOnlineInvoiceClient:
             NavValidationException: If parameters are invalid
             NavApiException: If API requests fail
         """
-        self.validate_credentials(credentials)
-
         if start_date >= end_date:
             raise NavValidationException("Start date must be before end date")
 
@@ -1186,7 +1173,11 @@ class NavOnlineInvoiceClient:
                     invoice_query_params=invoice_query_params,
                 )
 
-                digest_response = self.query_invoice_digest(credentials, digest_request)
+                digest_response = self.query_invoice_digest(
+                    page=page,
+                    invoice_direction=invoice_direction,
+                    invoice_query_params=invoice_query_params
+                )
 
                 if not digest_response.invoice_digest_result or not digest_response.invoice_digest_result.invoice_digest:
                     break
@@ -1229,7 +1220,11 @@ class NavOnlineInvoiceClient:
                     invoice_query_params=invoice_query_params,
                 )
 
-                digest_response = self.query_invoice_digest(credentials, digest_request)
+                digest_response = self.query_invoice_digest(
+                    page=page,
+                    invoice_direction=invoice_direction,
+                    invoice_query_params=invoice_query_params
+                )
 
                 if not digest_response.invoice_digest_result or not digest_response.invoice_digest_result.invoice_digest:
                     break
@@ -1256,7 +1251,10 @@ class NavOnlineInvoiceClient:
                         )
 
                         invoice_detail = self.query_invoice_data(
-                            credentials, data_request
+                            invoice_number=digest.invoice_number,
+                            invoice_direction=invoice_direction,
+                            batch_index=digest.batch_index,
+                            supplier_tax_number=supplier_tax_for_request
                         )
 
                         if invoice_detail:

@@ -219,7 +219,7 @@ class TestNavOnlineInvoiceClient:
             )
 
             invoice_data = client.get_invoice_data(
-                sample_credentials, "TEST001", InvoiceDirectionType.OUTBOUND
+                "TEST001", InvoiceDirectionType.OUTBOUND
             )
 
             assert invoice_data.invoice_number == "TEST001"
