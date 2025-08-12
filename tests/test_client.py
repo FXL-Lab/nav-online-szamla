@@ -182,7 +182,7 @@ class TestNavOnlineInvoiceClient:
         assert error_info.error_code == "INVALID_CREDENTIALS"
         assert error_info.message == "Invalid authentication credentials"
 
-    def test_get_invoice_detail_success(self, sample_credentials):
+    def test_get_invoice_data_success(self, sample_credentials):
         """Test successful invoice detail retrieval."""
         client = NavOnlineInvoiceClient(sample_credentials)
 
@@ -218,7 +218,7 @@ class TestNavOnlineInvoiceClient:
                 </QueryInvoiceDataResponse>""",
             )
 
-            invoice_data = client.get_invoice_detail(
+            invoice_data = client.get_invoice_data(
                 sample_credentials, "TEST001", InvoiceDirectionType.OUTBOUND
             )
 

@@ -430,11 +430,10 @@ class NavOnlineInvoiceClient:
         """
         Get invoice data and return a fully parsed InvoiceData dataclass.
         
-        This function provides a simple interface that:
-        1. Makes the API request with the given parameters
-        2. Automatically parses the XML response using xsdata
-        3. Decodes the base64 invoice data
-        4. Returns a typed InvoiceData dataclass
+        This function provides a high-level interface that:
+        1. Uses query_invoice_data to get the API response
+        2. Extracts and decodes the base64 invoice data
+        3. Returns a typed InvoiceData dataclass
         
         Args:
             credentials: NAV API credentials
@@ -452,59 +451,44 @@ class NavOnlineInvoiceClient:
             NavApiException: If API request fails
             NavXmlParsingException: If XML parsing fails
         """
+        # Validate credentials (query_invoice_data will use self.credentials, but we validate the passed ones)
         self.validate_credentials(credentials)
-
-        if not invoice_number:
-            raise NavValidationException("Invoice number is required")
-
+        
+        # Temporarily store the current credentials and use the provided ones
+        original_credentials = self.credentials
+        self.credentials = credentials
+        
         try:
-            # Create request using xsdata dataclasses
-            request = self.create_query_invoice_data_request(
-                credentials=credentials,
+            # Use query_invoice_data to get the full API response
+            response = self.query_invoice_data(
                 invoice_number=invoice_number,
                 invoice_direction=invoice_direction,
                 batch_index=batch_index,
                 supplier_tax_number=supplier_tax_number
             )
             
-            # Serialize request to XML
-            xml_request = self._serialize_request_to_xml(request)
-
-            # Make API call
-            with self.http_client as client:
-                response = client.post("queryInvoiceData", xml_request)
-                xml_response = response.text
-
-            # Parse response using generic parsing function  
-            parsed_response = self._parse_response_from_xml(xml_response, QueryInvoiceDataResponse)
-            
-            # Check for API errors
-            if parsed_response.result and parsed_response.result.func_code != FunctionCodeType.OK:
-                error_msg = f"NAV API Error: {parsed_response.result.func_code}"
-                if parsed_response.result.error_code:
-                    error_msg += f" - {parsed_response.result.error_code}"
-                if parsed_response.result.message:
-                    error_msg += f": {parsed_response.result.message}"
-                raise NavApiException(error_msg)
-            
-            # Get the invoice data - xsdata already decoded the base64 for us
-            if not parsed_response.invoice_data_result or not parsed_response.invoice_data_result.invoice_data:
+            # Extract the already-parsed invoice data from the response
+            if not response.invoice_data_result or not response.invoice_data_result.invoice_data:
                 raise NavInvoiceNotFoundException(f"No invoice data found for invoice {invoice_number}")
             
-            # The invoice_data is already decoded from base64 by xsdata and is in bytes format
-            decoded_xml_bytes = parsed_response.invoice_data_result.invoice_data
-            decoded_xml = decoded_xml_bytes.decode('utf-8')
+            # query_invoice_data already parsed the XML into an InvoiceData object
+            invoice_data = response.invoice_data_result.invoice_data
             
-            # Parse the decoded invoice XML using xsdata
-            invoice_data = self.xml_parser.from_string(decoded_xml, InvoiceData)
+            # Ensure it's an InvoiceData object (should be after query_invoice_data processing)
+            if not isinstance(invoice_data, InvoiceData):
+                raise NavXmlParsingException(f"Expected InvoiceData object, got {type(invoice_data)}")
             
+            logger.info(f"Successfully extracted invoice data for {invoice_number}")
             return invoice_data
 
         except Exception as e:
-            if isinstance(e, (NavApiException, NavValidationException, NavInvoiceNotFoundException)):
+            if isinstance(e, (NavApiException, NavValidationException, NavInvoiceNotFoundException, NavXmlParsingException)):
                 raise
             logger.error(f"Unexpected error in get_invoice_data: {e}")
             raise NavApiException(f"Failed to get invoice data: {str(e)}")
+        finally:
+            # Restore the original credentials
+            self.credentials = original_credentials
 
     def query_invoice_digest(
         self,
@@ -564,7 +548,6 @@ class NavOnlineInvoiceClient:
             logger.error(f"Unexpected error querying invoice digest: {e}")
             raise NavApiException(f"Failed to query invoice digest: {e}")
 
-
     def get_token(self, credentials: NavCredentials) -> str:
         """
         Get exchange token from NAV API.
@@ -618,50 +601,6 @@ class NavOnlineInvoiceClient:
                 "message", "Token exchange failed"
             )
             raise NavApiException(f"{error_code}: {message}")
-
-    def _build_basic_request_xml(
-        self, credentials: NavCredentials, request_id: str, timestamp: str
-    ) -> str:
-        """
-        Build basic request XML structure with authentication.
-
-        Args:
-            credentials: NAV API credentials
-            request_id: Unique request ID
-            timestamp: Request timestamp
-
-        Returns:
-            str: Basic XML request structure
-        """
-        password_hash = generate_password_hash(credentials.password)
-        request_signature = calculate_request_signature(
-            request_id, timestamp, credentials.signer_key
-        )
-
-        return f"""<?xml version="1.0" encoding="UTF-8"?>
-<QueryInvoiceDigestRequest xmlns="http://schemas.nav.gov.hu/OSA/3.0/api" xmlns:common="http://schemas.nav.gov.hu/NTCA/1.0/common">
-    <common:header>
-        <common:requestId>{request_id}</common:requestId>
-        <common:timestamp>{timestamp}</common:timestamp>
-        <common:requestVersion>3.0</common:requestVersion>
-        <common:headerVersion>1.0</common:headerVersion>
-    </common:header>
-    <common:user>
-        <common:login>{credentials.login}</common:login>
-        <common:passwordHash cryptoType="SHA-512">{password_hash}</common:passwordHash>
-        <common:taxNumber>{credentials.tax_number}</common:taxNumber>
-        <common:requestSignature cryptoType="SHA3-512">{request_signature}</common:requestSignature>
-    </common:user>
-    <software>
-        <softwareId>{SOFTWARE_ID}</softwareId>
-        <softwareName>{SOFTWARE_NAME}</softwareName>
-        <softwareOperation>LOCAL_SOFTWARE</softwareOperation>
-        <softwareMainVersion>{SOFTWARE_VERSION}</softwareMainVersion>
-        <softwareDevName>{SOFTWARE_DEV_NAME}</softwareDevName>
-        <softwareDevContact>{SOFTWARE_DEV_CONTACT}</softwareDevContact>
-        <softwareDevCountryCode>{SOFTWARE_DEV_COUNTRY}</softwareDevCountryCode>
-        <softwareDevTaxNumber>{credentials.tax_number}</softwareDevTaxNumber>
-    </software>"""
 
     def _build_query_invoice_check_request_xml(
         self, credentials: NavCredentials, request: QueryInvoiceCheckRequest
@@ -929,40 +868,6 @@ class NavOnlineInvoiceClient:
             raise NavXmlParsingException(
                 f"Failed to parse invoice digest response: {str(e)}"
             )
-
-    def get_invoice_detail(
-        self,
-        credentials: NavCredentials,
-        invoice_number: str,
-        invoice_direction: InvoiceDirectionType,
-        supplier_tax_number: Optional[str] = None,
-        batch_index: Optional[int] = None,
-    ) -> InvoiceData:
-        """
-        Get detailed information for a specific invoice.
-
-        Args:
-            credentials: NAV API credentials
-            invoice_number: Invoice number to query
-            invoice_direction: Invoice direction (OUTBOUND/INBOUND)
-            supplier_tax_number: Optional supplier tax number
-            batch_index: Optional batch index for batched invoices
-
-        Returns:
-            InvoiceData: Fully parsed invoice data as a dataclass
-
-        Raises:
-            NavValidationException: If parameters are invalid
-            NavInvoiceNotFoundException: If invoice not found
-            NavApiException: If API request fails
-        """
-        return self.get_invoice_data(
-            credentials=credentials,
-            invoice_number=invoice_number,
-            invoice_direction=invoice_direction,
-            supplier_tax_number=supplier_tax_number,
-            batch_index=batch_index,
-        )
 
     # New methods using API-compliant request types
 
