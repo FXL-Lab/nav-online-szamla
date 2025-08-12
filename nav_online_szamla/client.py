@@ -341,6 +341,29 @@ class NavOnlineInvoiceClient:
             invoice_number_query=invoice_number_query
         )
 
+    def create_query_invoice_chain_digest_request(
+        self,
+        page: int,
+        invoice_number: str,
+        invoice_direction: InvoiceDirectionType,
+        tax_number: Optional[str] = None
+    ) -> QueryInvoiceChainDigestRequest:
+        """Create a QueryInvoiceChainDigestRequest using generated models."""
+        
+        header = self._create_basic_header()
+        user = self._create_user_header(self.credentials, header)
+        software = self._create_software_info(self.credentials)
+        
+        return QueryInvoiceChainDigestRequest(
+            header=header,
+            user=user,
+            software=software,
+            page=page,
+            invoice_number=invoice_number,
+            invoice_direction=invoice_direction,
+            tax_number=tax_number
+        )
+
     def query_invoice_digest(
         self,
         page: int,
@@ -530,29 +553,6 @@ class NavOnlineInvoiceClient:
             logger.error(f"Unexpected error in query_invoice_check: {e}")
             raise NavApiException(f"Failed to check invoice: {str(e)}")
 
-    def create_query_invoice_chain_digest_request(
-        self,
-        page: int,
-        invoice_number: str,
-        invoice_direction: InvoiceDirectionType,
-        tax_number: Optional[str] = None
-    ) -> QueryInvoiceChainDigestRequest:
-        """Create a QueryInvoiceChainDigestRequest using generated models."""
-        
-        header = self._create_basic_header()
-        user = self._create_user_header(self.credentials, header)
-        software = self._create_software_info(self.credentials)
-        
-        return QueryInvoiceChainDigestRequest(
-            header=header,
-            user=user,
-            software=software,
-            page=page,
-            invoice_number=invoice_number,
-            invoice_direction=invoice_direction,
-            tax_number=tax_number
-        )
-
     def query_invoice_chain_digest(
         self, request: QueryInvoiceChainDigestRequest
     ) -> QueryInvoiceChainDigestResponse:
@@ -591,6 +591,43 @@ class NavOnlineInvoiceClient:
                 raise
             logger.error(f"Unexpected error in query_invoice_chain_digest: {e}")
             raise NavApiException(f"Failed to query invoice chain digest: {str(e)}")
+
+    def get_token(self) -> TokenExchangeResponse:
+        """
+        Get exchange token from NAV API using xsdata-generated dataclasses.
+        This uses automatic XML serialization and parsing for type-safe API interactions.
+
+        Returns:
+            TokenExchangeResponse: Complete response with token and validity information
+
+        Raises:
+            NavValidationException: If credentials are invalid
+            NavApiException: If API call fails
+            NavXmlParsingException: If XML parsing fails
+        """
+        try:
+            # Create request using helper method
+            request = self.create_token_exchange_request()
+            
+            # Serialize request to XML
+            xml_request = self._serialize_request_to_xml(request)
+            
+            # Make API call
+            with self.http_client as client:
+                response = client.post("tokenExchange", xml_request)
+                xml_response = response.text
+
+            # Parse response using generic parsing function
+            parsed_response = self._parse_response_from_xml(xml_response, TokenExchangeResponse)
+            
+            logger.info("Successfully obtained exchange token")
+            return parsed_response
+
+        except Exception as e:
+            if isinstance(e, (NavApiException, NavValidationException, NavXmlParsingException)):
+                raise
+            logger.error(f"Unexpected error in get_token: {e}")
+            raise NavApiException(f"Failed to get token: {str(e)}")
 
     def get_invoice_chain_digest(
         self,
@@ -677,43 +714,6 @@ class NavOnlineInvoiceClient:
                 raise
             logger.error(f"Unexpected error in get_invoice_data: {e}")
             raise NavApiException(f"Failed to get invoice data: {str(e)}")
-
-    def get_token(self) -> TokenExchangeResponse:
-        """
-        Get exchange token from NAV API using xsdata-generated dataclasses.
-        This uses automatic XML serialization and parsing for type-safe API interactions.
-
-        Returns:
-            TokenExchangeResponse: Complete response with token and validity information
-
-        Raises:
-            NavValidationException: If credentials are invalid
-            NavApiException: If API call fails
-            NavXmlParsingException: If XML parsing fails
-        """
-        try:
-            # Create request using helper method
-            request = self.create_token_exchange_request()
-            
-            # Serialize request to XML
-            xml_request = self._serialize_request_to_xml(request)
-            
-            # Make API call
-            with self.http_client as client:
-                response = client.post("tokenExchange", xml_request)
-                xml_response = response.text
-
-            # Parse response using generic parsing function
-            parsed_response = self._parse_response_from_xml(xml_response, TokenExchangeResponse)
-            
-            logger.info("Successfully obtained exchange token")
-            return parsed_response
-
-        except Exception as e:
-            if isinstance(e, (NavApiException, NavValidationException, NavXmlParsingException)):
-                raise
-            logger.error(f"Unexpected error in get_token: {e}")
-            raise NavApiException(f"Failed to get token: {str(e)}")
 
     def get_exchange_token(self) -> str:
         """
