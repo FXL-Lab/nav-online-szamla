@@ -1,5 +1,5 @@
 """
-Test for query_invoice_data_with_xsdata and the generic parsing functionality.
+Test for xsdata integration with automatic XML serialization and parsing functionality.
 """
 
 import pytest
@@ -143,7 +143,7 @@ class TestXsdataIntegration:
     </invoiceDigestResult>
 </QueryInvoiceDigestResponse>'''
 
-    def test_query_invoice_data_with_xsdata_success(self):
+    def test_query_invoice_data_success(self):
         """Test successful invoice data query using xsdata."""
         credentials = self._get_test_credentials()
         client = NavOnlineInvoiceClient(credentials)
@@ -157,7 +157,7 @@ class TestXsdataIntegration:
             )
 
             # Test the method
-            response = client.query_invoice_data_with_xsdata(
+            response = client.query_invoice_data(
                 invoice_number="FXL-2025-6",
                 invoice_direction=InvoiceDirectionType.OUTBOUND
             )
@@ -179,18 +179,19 @@ class TestXsdataIntegration:
             assert response.invoice_data_result.invoice_data.invoice_number == "FXL-2025-6"
             assert response.invoice_data_result.invoice_data.invoice_issue_date == "2025-07-03"
 
-    def test_query_invoice_data_with_xsdata_validation_error(self):
-        """Test validation error when invoice number is empty."""
+    def test_query_invoice_data_validation_error(self):
+        """Test invoice data query with validation error."""
         credentials = self._get_test_credentials()
         client = NavOnlineInvoiceClient(credentials)
 
+        # Test with empty invoice number (should raise ValidationError)
         with pytest.raises(NavValidationException, match="Invoice number is required"):
-            client.query_invoice_data_with_xsdata(
+            client.query_invoice_data(
                 invoice_number="",
                 invoice_direction=InvoiceDirectionType.OUTBOUND
             )
 
-    def test_query_invoice_data_with_xsdata_invoice_not_found(self):
+    def test_query_invoice_data_invoice_not_found(self):
         """Test handling when invoice is not found."""
         credentials = self._get_test_credentials()
         client = NavOnlineInvoiceClient(credentials)
@@ -220,7 +221,7 @@ class TestXsdataIntegration:
             )
 
             with pytest.raises(NavInvoiceNotFoundException, match="Invoice NOT-FOUND not found"):
-                client.query_invoice_data_with_xsdata(
+                client.query_invoice_data(
                     invoice_number="NOT-FOUND",
                     invoice_direction=InvoiceDirectionType.OUTBOUND
                 )
@@ -316,7 +317,7 @@ class TestXsdataIntegration:
         assert 'ns0:' not in xml_output  # Should not have ns0 prefixes
         assert 'ns1:' not in xml_output  # Should not have ns1 prefixes
 
-    def test_query_invoice_digest_with_xsdata_success(self):
+    def test_query_invoice_digest_success(self):
         """Test successful invoice digest query using xsdata."""
         credentials = self._get_test_credentials()
         client = NavOnlineInvoiceClient(credentials)
@@ -344,7 +345,7 @@ class TestXsdataIntegration:
             )
 
             # Test the method
-            response = client.query_invoice_digest_with_xsdata(
+            response = client.query_invoice_digest(
                 page=1,
                 invoice_direction=InvoiceDirectionType.OUTBOUND,
                 invoice_query_params=query_params
@@ -366,7 +367,7 @@ class TestXsdataIntegration:
             assert first_digest.supplier_tax_number == "32703094"
             assert first_digest.supplier_name == "FXL KORLÃTOLT FELELÅGÅ° TÃRSASÃG"
 
-    def test_query_invoice_digest_with_xsdata_validation_error(self):
+    def test_query_invoice_digest_validation_error(self):
         """Test validation error when page is invalid."""
         credentials = self._get_test_credentials()
         client = NavOnlineInvoiceClient(credentials)
@@ -386,19 +387,19 @@ class TestXsdataIntegration:
         )
 
         with pytest.raises(NavValidationException, match="Page number must be >= 1"):
-            client.query_invoice_digest_with_xsdata(
+            client.query_invoice_digest(
                 page=0,  # Invalid page number
                 invoice_direction=InvoiceDirectionType.OUTBOUND,
                 invoice_query_params=query_params
             )
 
-    def test_query_invoice_digest_with_xsdata_missing_params(self):
+    def test_query_invoice_digest_missing_params(self):
         """Test validation error when query params are missing."""
         credentials = self._get_test_credentials()
         client = NavOnlineInvoiceClient(credentials)
 
         with pytest.raises(NavValidationException, match="Invoice query parameters are required"):
-            client.query_invoice_digest_with_xsdata(
+            client.query_invoice_digest(
                 page=1,
                 invoice_direction=InvoiceDirectionType.OUTBOUND,
                 invoice_query_params=None

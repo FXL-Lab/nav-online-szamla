@@ -327,7 +327,7 @@ class NavOnlineInvoiceClient:
             invoice_number_query=invoice_number_query
         )
         
-    def query_invoice_data_with_xsdata(
+    def query_invoice_data(
         self,
         invoice_number: str,
         invoice_direction: InvoiceDirectionType,
@@ -336,7 +336,7 @@ class NavOnlineInvoiceClient:
     ) -> QueryInvoiceDataResponse:
         """
         Query invoice data using xsdata-generated dataclasses.
-        This demonstrates the new approach using automatic XML serialization and parsing.
+        This uses automatic XML serialization and parsing for type-safe API interactions.
         
         Args:
             invoice_number: Invoice number to query
@@ -458,40 +458,41 @@ class NavOnlineInvoiceClient:
             raise NavValidationException("Invoice number is required")
 
         try:
-            # For now, use the manual XML building approach since it works
-            # TODO: Fix xsdata signature calculation issue
-            xml_request = self._build_query_invoice_data_xml(
-                credentials,
-                invoice_number,
-                invoice_direction,
-                supplier_tax_number,
-                batch_index,
+            # Create request using xsdata dataclasses
+            request = self.create_query_invoice_data_request(
+                credentials=credentials,
+                invoice_number=invoice_number,
+                invoice_direction=invoice_direction,
+                batch_index=batch_index,
+                supplier_tax_number=supplier_tax_number
             )
+            
+            # Serialize request to XML
+            xml_request = self._serialize_request_to_xml(request)
 
-            # Send the request
-            headers = {"Content-Type": "application/xml"}
+            # Make API call
             with self.http_client as client:
-                response = client.post("/queryInvoiceData", xml_request, headers)
-                response_xml = response.text
+                response = client.post("queryInvoiceData", xml_request)
+                xml_response = response.text
 
-            # Parse the response using xsdata
-            query_response = self.xml_parser.from_string(response_xml, QueryInvoiceDataResponse)
+            # Parse response using generic parsing function  
+            parsed_response = self._parse_response_from_xml(xml_response, QueryInvoiceDataResponse)
             
             # Check for API errors
-            if query_response.result and query_response.result.func_code != FunctionCodeType.OK:
-                error_msg = f"NAV API Error: {query_response.result.func_code}"
-                if query_response.result.error_code:
-                    error_msg += f" - {query_response.result.error_code}"
-                if query_response.result.message:
-                    error_msg += f": {query_response.result.message}"
+            if parsed_response.result and parsed_response.result.func_code != FunctionCodeType.OK:
+                error_msg = f"NAV API Error: {parsed_response.result.func_code}"
+                if parsed_response.result.error_code:
+                    error_msg += f" - {parsed_response.result.error_code}"
+                if parsed_response.result.message:
+                    error_msg += f": {parsed_response.result.message}"
                 raise NavApiException(error_msg)
             
             # Get the invoice data - xsdata already decoded the base64 for us
-            if not query_response.invoice_data_result or not query_response.invoice_data_result.invoice_data:
+            if not parsed_response.invoice_data_result or not parsed_response.invoice_data_result.invoice_data:
                 raise NavInvoiceNotFoundException(f"No invoice data found for invoice {invoice_number}")
             
             # The invoice_data is already decoded from base64 by xsdata and is in bytes format
-            decoded_xml_bytes = query_response.invoice_data_result.invoice_data
+            decoded_xml_bytes = parsed_response.invoice_data_result.invoice_data
             decoded_xml = decoded_xml_bytes.decode('utf-8')
             
             # Parse the decoded invoice XML using xsdata
@@ -505,7 +506,7 @@ class NavOnlineInvoiceClient:
             logger.error(f"Unexpected error in get_invoice_data: {e}")
             raise NavApiException(f"Failed to get invoice data: {str(e)}")
 
-    def query_invoice_digest_with_xsdata(
+    def query_invoice_digest(
         self,
         page: int,
         invoice_direction: InvoiceDirectionType,
@@ -513,7 +514,7 @@ class NavOnlineInvoiceClient:
     ) -> QueryInvoiceDigestResponse:
         """
         Query invoice digest using xsdata-generated dataclasses.
-        This demonstrates the new approach using automatic XML serialization and parsing.
+        This uses automatic XML serialization and parsing for type-safe API interactions.
         
         Args:
             page: Page number for pagination (1-based)
@@ -662,292 +663,6 @@ class NavOnlineInvoiceClient:
         <softwareDevTaxNumber>{credentials.tax_number}</softwareDevTaxNumber>
     </software>"""
 
-    def _build_query_invoice_data_xml(
-        self,
-        credentials: NavCredentials,
-        invoice_number: str,
-        invoice_direction: InvoiceDirectionType,
-        supplier_tax_number: Optional[str] = None,
-        batch_index: Optional[int] = None,
-    ) -> str:
-        """
-        Build XML for queryInvoiceData request.
-
-        Args:
-            credentials: NAV API credentials
-            invoice_number: Invoice number to query
-            invoice_direction: Invoice direction
-            supplier_tax_number: Optional supplier tax number
-            batch_index: Optional batch index
-
-        Returns:
-            str: Complete XML request
-        """
-        request_id = generate_custom_id()
-        timestamp = format_timestamp_for_nav()
-        password_hash = generate_password_hash(credentials.password)
-        request_signature = calculate_request_signature(
-            request_id, timestamp, credentials.signer_key
-        )
-
-        supplier_tax_filter = ""
-        if supplier_tax_number:
-            supplier_tax_filter = (
-                f"<supplierTaxNumber>{supplier_tax_number}</supplierTaxNumber>"
-            )
-
-        batch_index_filter = ""
-        if batch_index is not None:
-            batch_index_filter = f"<batchIndex>{batch_index}</batchIndex>"
-
-        return f"""<?xml version="1.0" encoding="UTF-8"?>
-<QueryInvoiceDataRequest xmlns="http://schemas.nav.gov.hu/OSA/3.0/api" xmlns:common="http://schemas.nav.gov.hu/NTCA/1.0/common">
-    <common:header>
-        <common:requestId>{request_id}</common:requestId>
-        <common:timestamp>{timestamp}</common:timestamp>
-        <common:requestVersion>3.0</common:requestVersion>
-        <common:headerVersion>1.0</common:headerVersion>
-    </common:header>
-    <common:user>
-        <common:login>{credentials.login}</common:login>
-        <common:passwordHash cryptoType="SHA-512">{password_hash}</common:passwordHash>
-        <common:taxNumber>{credentials.tax_number}</common:taxNumber>
-        <common:requestSignature cryptoType="SHA3-512">{request_signature}</common:requestSignature>
-    </common:user>
-    <software>
-        <softwareId>{SOFTWARE_ID}</softwareId>
-        <softwareName>{SOFTWARE_NAME}</softwareName>
-        <softwareOperation>LOCAL_SOFTWARE</softwareOperation>
-        <softwareMainVersion>{SOFTWARE_VERSION}</softwareMainVersion>
-        <softwareDevName>{SOFTWARE_DEV_NAME}</softwareDevName>
-        <softwareDevContact>{SOFTWARE_DEV_CONTACT}</softwareDevContact>
-        <softwareDevCountryCode>{SOFTWARE_DEV_COUNTRY}</softwareDevCountryCode>
-        <softwareDevTaxNumber>{credentials.tax_number}</softwareDevTaxNumber>
-    </software>
-    <invoiceNumberQuery>
-        <invoiceNumber>{invoice_number}</invoiceNumber>
-        <invoiceDirection>{invoice_direction.value}</invoiceDirection>
-        {supplier_tax_filter}
-        {batch_index_filter}
-    </invoiceNumberQuery>
-</QueryInvoiceDataRequest>"""
-
-    def _build_query_invoice_digest_request_xml(
-        self, credentials: NavCredentials, request: QueryInvoiceDigestRequestType
-    ) -> str:
-        """Build XML for QueryInvoiceDigest request according to API specification."""
-        request_id = generate_custom_id()
-        timestamp = format_timestamp_for_nav()
-        password_hash = generate_password_hash(credentials.password)
-        request_signature = calculate_request_signature(
-            request_id, timestamp, credentials.signer_key
-        )
-
-        # Build mandatory query params
-        mandatory_params = ""
-        if request.invoice_query_params.mandatory_query_params.invoice_issue_date:
-            date_range = (
-                request.invoice_query_params.mandatory_query_params.invoice_issue_date
-            )
-            mandatory_params += f"""
-            <invoiceIssueDate>
-                <dateFrom>{date_range.date_from}</dateFrom>
-                <dateTo>{date_range.date_to}</dateTo>
-            </invoiceIssueDate>"""
-
-        if request.invoice_query_params.mandatory_query_params.ins_date:
-            datetime_range = (
-                request.invoice_query_params.mandatory_query_params.ins_date
-            )
-            # Check if it's DateTimeIntervalParamType or DateIntervalParamType
-            if hasattr(datetime_range, 'date_time_from'):
-                # DateTimeIntervalParamType
-                mandatory_params += f"""
-            <insDate>
-                <dateTimeFrom>{datetime_range.date_time_from}</dateTimeFrom>
-                <dateTimeTo>{datetime_range.date_time_to}</dateTimeTo>
-            </insDate>"""
-            else:
-                # DateIntervalParamType - treat as date range
-                mandatory_params += f"""
-            <insDate>
-                <dateTimeFrom>{datetime_range.date_from}T00:00:00Z</dateTimeFrom>
-                <dateTimeTo>{datetime_range.date_to}T23:59:59Z</dateTimeTo>
-            </insDate>"""
-
-        if request.invoice_query_params.mandatory_query_params.original_invoice_number:
-            orig_num = (
-                request.invoice_query_params.mandatory_query_params.original_invoice_number
-            )
-            mandatory_params += f"""
-            <originalInvoiceNumber>
-                <originalInvoiceNumber>{orig_num.original_invoice_number}</originalInvoiceNumber>
-            </originalInvoiceNumber>"""
-
-        # Build additional query params
-        additional_params = ""
-        if request.invoice_query_params.additional_query_params:
-            add_params = request.invoice_query_params.additional_query_params
-            additional_elements = []
-
-            if add_params.tax_number:
-                additional_elements.append(
-                    f"<taxNumber>{add_params.tax_number}</taxNumber>"
-                )
-            if add_params.group_member_tax_number:
-                additional_elements.append(
-                    f"<groupMemberTaxNumber>{add_params.group_member_tax_number}</groupMemberTaxNumber>"
-                )
-            if add_params.name:
-                additional_elements.append(f"<name>{add_params.name}</name>")
-            if add_params.invoice_category:
-                additional_elements.append(
-                    f"<invoiceCategory>{add_params.invoice_category.value}</invoiceCategory>"
-                )
-            if add_params.payment_method:
-                additional_elements.append(
-                    f"<paymentMethod>{add_params.payment_method.value}</paymentMethod>"
-                )
-            if add_params.invoice_appearance:
-                additional_elements.append(
-                    f"<invoiceAppearance>{add_params.invoice_appearance.value}</invoiceAppearance>"
-                )
-            if add_params.source:
-                additional_elements.append(
-                    f"<source>{add_params.source.value}</source>"
-                )
-            if add_params.currency:
-                additional_elements.append(
-                    f"<currency>{add_params.currency}</currency>"
-                )
-
-            if additional_elements:
-                additional_params = f"""
-        <additionalQueryParams>
-            {''.join(additional_elements)}
-        </additionalQueryParams>"""
-
-        # Build relational query params
-        relational_params = ""
-        if request.invoice_query_params.relational_query_params:
-            rel_params = request.invoice_query_params.relational_query_params
-            relational_elements = []
-
-            if rel_params.invoice_delivery:
-                relational_elements.append(
-                    f"""
-            <invoiceDelivery>
-                <queryOperator>{rel_params.invoice_delivery.query_operator.value}</queryOperator>
-                <queryValue>{rel_params.invoice_delivery.query_value}</queryValue>
-            </invoiceDelivery>"""
-                )
-
-            if rel_params.payment_date:
-                relational_elements.append(
-                    f"""
-            <paymentDate>
-                <queryOperator>{rel_params.payment_date.query_operator.value}</queryOperator>
-                <queryValue>{rel_params.payment_date.query_value}</queryValue>
-            </paymentDate>"""
-                )
-
-            if rel_params.invoice_net_amount:
-                relational_elements.append(
-                    f"""
-            <invoiceNetAmount>
-                <queryOperator>{rel_params.invoice_net_amount.query_operator.value}</queryOperator>
-                <queryValue>{rel_params.invoice_net_amount.query_value}</queryValue>
-            </invoiceNetAmount>"""
-                )
-
-            if rel_params.invoice_net_amount_huf:
-                relational_elements.append(
-                    f"""
-            <invoiceNetAmountHUF>
-                <queryOperator>{rel_params.invoice_net_amount_huf.query_operator.value}</queryOperator>
-                <queryValue>{rel_params.invoice_net_amount_huf.query_value}</queryValue>
-            </invoiceNetAmountHUF>"""
-                )
-
-            if rel_params.invoice_vat_amount:
-                relational_elements.append(
-                    f"""
-            <invoiceVatAmount>
-                <queryOperator>{rel_params.invoice_vat_amount.query_operator.value}</queryOperator>
-                <queryValue>{rel_params.invoice_vat_amount.query_value}</queryValue>
-            </invoiceVatAmount>"""
-                )
-
-            if rel_params.invoice_vat_amount_huf:
-                relational_elements.append(
-                    f"""
-            <invoiceVatAmountHUF>
-                <queryOperator>{rel_params.invoice_vat_amount_huf.query_operator.value}</queryOperator>
-                <queryValue>{rel_params.invoice_vat_amount_huf.query_value}</queryValue>
-            </invoiceVatAmountHUF>"""
-                )
-
-            if relational_elements:
-                relational_params = f"""
-        <relationalQueryParams>
-            {''.join(relational_elements)}
-        </relationalQueryParams>"""
-
-        # Build transaction query params
-        transaction_params = ""
-        if request.invoice_query_params.transaction_query_params:
-            trans_params = request.invoice_query_params.transaction_query_params
-            transaction_elements = []
-
-            if trans_params.transaction_id:
-                transaction_elements.append(
-                    f"<transactionId>{trans_params.transaction_id}</transactionId>"
-                )
-            if trans_params.index:
-                transaction_elements.append(f"<index>{trans_params.index}</index>")
-            if trans_params.invoice_operation:
-                transaction_elements.append(
-                    f"<invoiceOperation>{trans_params.invoice_operation.value}</invoiceOperation>"
-                )
-
-            if transaction_elements:
-                transaction_params = f"""
-        <transactionQueryParams>
-            {''.join(transaction_elements)}
-        </transactionQueryParams>"""
-
-        return f"""<?xml version="1.0" encoding="UTF-8"?>
-<QueryInvoiceDigestRequest xmlns="http://schemas.nav.gov.hu/OSA/3.0/api" xmlns:common="http://schemas.nav.gov.hu/NTCA/1.0/common">
-    <common:header>
-        <common:requestId>{request_id}</common:requestId>
-        <common:timestamp>{timestamp}</common:timestamp>
-        <common:requestVersion>3.0</common:requestVersion>
-        <common:headerVersion>1.0</common:headerVersion>
-    </common:header>
-    <common:user>
-        <common:login>{credentials.login}</common:login>
-        <common:passwordHash cryptoType="SHA-512">{password_hash}</common:passwordHash>
-        <common:taxNumber>{credentials.tax_number}</common:taxNumber>
-        <common:requestSignature cryptoType="SHA3-512">{request_signature}</common:requestSignature>
-    </common:user>
-    <software>
-        <softwareId>{SOFTWARE_ID}</softwareId>
-        <softwareName>{SOFTWARE_NAME}</softwareName>
-        <softwareOperation>LOCAL_SOFTWARE</softwareOperation>
-        <softwareMainVersion>{SOFTWARE_VERSION}</softwareMainVersion>
-        <softwareDevName>{SOFTWARE_DEV_NAME}</softwareDevName>
-        <softwareDevContact>{SOFTWARE_DEV_CONTACT}</softwareDevContact>
-        <softwareDevCountryCode>{SOFTWARE_DEV_COUNTRY}</softwareDevCountryCode>
-        <softwareDevTaxNumber>{credentials.tax_number}</softwareDevTaxNumber>
-    </software>
-    <page>{request.page}</page>
-    <invoiceDirection>{request.invoice_direction.value}</invoiceDirection>
-    <invoiceQueryParams>
-        <mandatoryQueryParams>{mandatory_params}
-        </mandatoryQueryParams>{additional_params}{relational_params}{transaction_params}
-    </invoiceQueryParams>
-</QueryInvoiceDigestRequest>"""
-
     def _build_query_invoice_check_request_xml(
         self, credentials: NavCredentials, request: QueryInvoiceCheckRequest
     ) -> str:
@@ -1000,59 +715,6 @@ class NavOnlineInvoiceClient:
         {batch_index_filter}
     </invoiceNumberQuery>
 </QueryInvoiceCheckRequest>"""
-
-    def _build_query_invoice_data_request_xml(
-        self, credentials: NavCredentials, request: QueryInvoiceDataRequestType
-    ) -> str:
-        """Build XML for QueryInvoiceData request according to API specification."""
-        request_id = generate_custom_id()
-        timestamp = format_timestamp_for_nav()
-        password_hash = generate_password_hash(credentials.password)
-        request_signature = calculate_request_signature(
-            request_id, timestamp, credentials.signer_key
-        )
-
-        batch_index_filter = ""
-        if request.invoice_number_query and request.invoice_number_query.batch_index is not None:
-            batch_index_filter = f"<batchIndex>{request.invoice_number_query.batch_index}</batchIndex>"
-
-        supplier_tax_filter = ""
-        if request.invoice_number_query and request.invoice_number_query.supplier_tax_number:
-            supplier_tax_filter = (
-                f"<supplierTaxNumber>{request.invoice_number_query.supplier_tax_number}</supplierTaxNumber>"
-            )
-
-        return f"""<?xml version="1.0" encoding="UTF-8"?>
-<QueryInvoiceDataRequest xmlns="http://schemas.nav.gov.hu/OSA/3.0/api" xmlns:common="http://schemas.nav.gov.hu/NTCA/1.0/common">
-    <common:header>
-        <common:requestId>{request_id}</common:requestId>
-        <common:timestamp>{timestamp}</common:timestamp>
-        <common:requestVersion>3.0</common:requestVersion>
-        <common:headerVersion>1.0</common:headerVersion>
-    </common:header>
-    <common:user>
-        <common:login>{credentials.login}</common:login>
-        <common:passwordHash cryptoType="SHA-512">{password_hash}</common:passwordHash>
-        <common:taxNumber>{credentials.tax_number}</common:taxNumber>
-        <common:requestSignature cryptoType="SHA3-512">{request_signature}</common:requestSignature>
-    </common:user>
-    <software>
-        <softwareId>{SOFTWARE_ID}</softwareId>
-        <softwareName>{SOFTWARE_NAME}</softwareName>
-        <softwareOperation>LOCAL_SOFTWARE</softwareOperation>
-        <softwareMainVersion>{SOFTWARE_VERSION}</softwareMainVersion>
-        <softwareDevName>{SOFTWARE_DEV_NAME}</softwareDevName>
-        <softwareDevContact>{SOFTWARE_DEV_CONTACT}</softwareDevContact>
-        <softwareDevCountryCode>{SOFTWARE_DEV_COUNTRY}</softwareDevCountryCode>
-        <softwareDevTaxNumber>{credentials.tax_number}</softwareDevTaxNumber>
-    </software>
-    <invoiceNumberQuery>
-        <invoiceNumber>{request.invoice_number_query.invoice_number}</invoiceNumber>
-        <invoiceDirection>{request.invoice_number_query.invoice_direction.value}</invoiceDirection>
-        {supplier_tax_filter}
-        {batch_index_filter}
-    </invoiceNumberQuery>
-</QueryInvoiceDataRequest>"""
 
     def _build_query_invoice_chain_digest_request_xml(
         self, credentials: NavCredentials, request: QueryInvoiceChainDigestRequestType
@@ -1268,359 +930,6 @@ class NavOnlineInvoiceClient:
                 f"Failed to parse invoice digest response: {str(e)}"
             )
 
-    def _parse_api_compliant_invoice_digest_response(
-        self, xml_response: str
-    ) -> QueryInvoiceDigestResponseType:
-        """
-        Parse invoice digest response from XML to API-compliant response type.
-
-        Args:
-            xml_response: XML response string
-
-        Returns:
-            QueryInvoiceDigestResponseType: API-compliant response with invoice digests
-        """
-        try:
-            dom = parse_xml_safely(xml_response)
-
-            # Check for errors first
-            error_elements = find_xml_elements_with_namespace_aware(dom, "errorCode")
-            if error_elements:
-                error_info = self._parse_error_response(xml_response)
-                raise NavApiException(
-                    f"NAV API Error: {error_info.error_code} - {error_info.message}"
-                )
-
-            # Parse header
-            header_elements = find_xml_elements_with_namespace_aware(dom, "header")
-            header = None
-            if header_elements:
-                header_elem = header_elements[0]
-                header = BasicHeaderType(
-                    request_id=get_xml_element_value(header_elem, "requestId", ""),
-                    timestamp=get_xml_element_value(header_elem, "timestamp", ""),
-                    request_version=get_xml_element_value(
-                        header_elem, "requestVersion", "3.0"
-                    ),
-                    header_version=get_xml_element_value(
-                        header_elem, "headerVersion", "1.0"
-                    ),
-                )
-
-            # Parse result
-            result_elements = find_xml_elements_with_namespace_aware(dom, "result")
-            result = None
-            if result_elements:
-                result_elem = result_elements[0]
-                result = BasicResultType(
-                    func_code=get_xml_element_value(result_elem, "funcCode", "ERROR"),
-                    error_code=get_xml_element_value(result_elem, "errorCode", None),
-                    message=get_xml_element_value(result_elem, "message", None),
-                )
-
-            # Parse invoice digests
-            invoice_digests = []
-            invoice_elements = find_xml_elements_with_namespace_aware(
-                dom, "invoiceDigest"
-            )
-
-            logger.debug(f"Found {len(invoice_elements)} invoice digest elements")
-
-            for invoice_elem in invoice_elements:
-                try:
-                    # Extract basic invoice information
-                    invoice_number = get_xml_element_value(
-                        invoice_elem, "invoiceNumber", ""
-                    )
-
-                    # The digest response doesn't contain invoiceDirection directly
-                    # For now, assume OUTBOUND since we queried for OUTBOUND invoices
-                    # This could be improved by looking at the supplier tax number vs our tax number
-                    invoice_direction = InvoiceDirectionType.OUTBOUND
-
-                    # Parse batch index
-                    batch_index_str = get_xml_element_value(
-                        invoice_elem, "batchIndex", ""
-                    )
-                    batch_index = int(batch_index_str) if batch_index_str else None
-
-                    # Parse invoice operation and category
-                    invoice_operation = get_xml_element_value(
-                        invoice_elem, "invoiceOperation", None
-                    )
-                    invoice_category = get_xml_element_value(
-                        invoice_elem, "invoiceCategory", None
-                    )
-
-                    # Parse invoice issue date
-                    invoice_issue_date_str = get_xml_element_value(
-                        invoice_elem, "invoiceIssueDate", ""
-                    )
-                    invoice_issue_date = None
-                    if invoice_issue_date_str:
-                        try:
-                            invoice_issue_date = datetime.strptime(
-                                invoice_issue_date_str, "%Y-%m-%d"
-                            )
-                        except ValueError:
-                            logger.warning(
-                                f"Could not parse invoice issue date: {invoice_issue_date_str}"
-                            )
-
-                    # Parse supplier information
-                    supplier_tax_number = get_xml_element_value(
-                        invoice_elem, "supplierTaxNumber", None
-                    )
-                    supplier_group_member_tax_number = get_xml_element_value(
-                        invoice_elem, "supplierGroupMemberTaxNumber", None
-                    )
-                    supplier_name = get_xml_element_value(
-                        invoice_elem, "supplierName", None
-                    )
-
-                    # Parse insertion date
-                    ins_date_str = get_xml_element_value(invoice_elem, "insDate", "")
-                    ins_date = None
-                    if ins_date_str:
-                        try:
-                            ins_date = datetime.fromisoformat(
-                                ins_date_str.replace("Z", "+00:00")
-                            )
-                        except ValueError:
-                            logger.warning(f"Could not parse ins date: {ins_date_str}")
-
-                    # Parse customer information
-                    customer_tax_number = get_xml_element_value(
-                        invoice_elem, "customerTaxNumber", None
-                    )
-                    customer_group_member_tax_number = get_xml_element_value(
-                        invoice_elem, "customerGroupMemberTaxNumber", None
-                    )
-                    customer_name = get_xml_element_value(
-                        invoice_elem, "customerName", None
-                    )
-
-                    # Parse payment information
-                    payment_method = get_xml_element_value(
-                        invoice_elem, "paymentMethod", None
-                    )
-                    payment_date_str = get_xml_element_value(
-                        invoice_elem, "paymentDate", ""
-                    )
-                    payment_date = None
-                    if payment_date_str:
-                        try:
-                            payment_date = datetime.strptime(
-                                payment_date_str, "%Y-%m-%d"
-                            )
-                        except ValueError:
-                            logger.warning(
-                                f"Could not parse payment date: {payment_date_str}"
-                            )
-
-                    # Parse invoice appearance and source
-                    invoice_appearance = get_xml_element_value(
-                        invoice_elem, "invoiceAppearance", None
-                    )
-                    source = get_xml_element_value(invoice_elem, "source", None)
-
-                    # Parse invoice delivery date
-                    invoice_delivery_date_str = get_xml_element_value(
-                        invoice_elem, "invoiceDeliveryDate", ""
-                    )
-                    invoice_delivery_date = None
-                    if invoice_delivery_date_str:
-                        try:
-                            invoice_delivery_date = datetime.strptime(
-                                invoice_delivery_date_str, "%Y-%m-%d"
-                            )
-                        except ValueError:
-                            logger.warning(
-                                f"Could not parse invoice delivery date: {invoice_delivery_date_str}"
-                            )
-
-                    # Parse currency and amounts
-                    currency = get_xml_element_value(invoice_elem, "currency", None)
-
-                    # Parse invoice amounts
-                    invoice_net_amount_str = get_xml_element_value(
-                        invoice_elem, "invoiceNetAmount", ""
-                    )
-                    invoice_net_amount = None
-                    if invoice_net_amount_str:
-                        try:
-                            invoice_net_amount = float(invoice_net_amount_str)
-                        except ValueError:
-                            logger.warning(
-                                f"Could not parse invoice net amount: {invoice_net_amount_str}"
-                            )
-
-                    invoice_net_amount_huf_str = get_xml_element_value(
-                        invoice_elem, "invoiceNetAmountHUF", ""
-                    )
-                    invoice_net_amount_huf = None
-                    if invoice_net_amount_huf_str:
-                        try:
-                            invoice_net_amount_huf = float(invoice_net_amount_huf_str)
-                        except ValueError:
-                            logger.warning(
-                                f"Could not parse invoice net amount HUF: {invoice_net_amount_huf_str}"
-                            )
-
-                    invoice_vat_amount_str = get_xml_element_value(
-                        invoice_elem, "invoiceVatAmount", ""
-                    )
-                    invoice_vat_amount = None
-                    if invoice_vat_amount_str:
-                        try:
-                            invoice_vat_amount = float(invoice_vat_amount_str)
-                        except ValueError:
-                            logger.warning(
-                                f"Could not parse invoice VAT amount: {invoice_vat_amount_str}"
-                            )
-
-                    invoice_vat_amount_huf_str = get_xml_element_value(
-                        invoice_elem, "invoiceVatAmountHUF", ""
-                    )
-                    invoice_vat_amount_huf = None
-                    if invoice_vat_amount_huf_str:
-                        try:
-                            invoice_vat_amount_huf = float(invoice_vat_amount_huf_str)
-                        except ValueError:
-                            logger.warning(
-                                f"Could not parse invoice VAT amount HUF: {invoice_vat_amount_huf_str}"
-                            )
-
-                    # Parse transaction information
-                    transaction_id = get_xml_element_value(
-                        invoice_elem, "transactionId", None
-                    )
-                    index_str = get_xml_element_value(invoice_elem, "index", "")
-                    index = None
-                    if index_str:
-                        try:
-                            index = int(index_str)
-                        except ValueError:
-                            logger.warning(f"Could not parse index: {index_str}")
-
-                    # Parse modification information
-                    original_invoice_number = get_xml_element_value(
-                        invoice_elem, "originalInvoiceNumber", None
-                    )
-                    modification_index_str = get_xml_element_value(
-                        invoice_elem, "modificationIndex", ""
-                    )
-                    modification_index = None
-                    if modification_index_str:
-                        try:
-                            modification_index = int(modification_index_str)
-                        except ValueError:
-                            logger.warning(
-                                f"Could not parse modification index: {modification_index_str}"
-                            )
-
-                    # Parse other fields
-                    completeness_indicator = (
-                        get_xml_element_value(
-                            invoice_elem, "completenessIndicator", "false"
-                        )
-                        == "true"
-                    )
-                    original_request_version = get_xml_element_value(
-                        invoice_elem, "originalRequestVersion", None
-                    )
-
-                    logger.debug(
-                        f"Parsed invoice digest: {invoice_number}, operation: {invoice_operation}, supplier: {supplier_tax_number}, customer: {customer_tax_number}"
-                    )
-
-                    digest = InvoiceDigestType(
-                        invoice_number=invoice_number,
-                        batch_index=batch_index,
-                        invoice_operation=ManageInvoiceOperationType(invoice_operation) if invoice_operation else None,
-                        invoice_category=InvoiceCategoryType(invoice_category) if invoice_category else None,
-                        invoice_issue_date=invoice_issue_date_str,
-                        supplier_tax_number=supplier_tax_number,
-                        supplier_name=supplier_name,
-                        ins_date=ins_date_str,
-                        supplier_group_member_tax_number=supplier_group_member_tax_number,
-                        customer_tax_number=customer_tax_number,
-                        customer_group_member_tax_number=customer_group_member_tax_number,
-                        customer_name=customer_name,
-                        payment_method=PaymentMethodType(payment_method) if payment_method else None,
-                        payment_date=payment_date_str,
-                        invoice_appearance=InvoiceAppearanceType(invoice_appearance) if invoice_appearance else None,
-                        source=SourceType(source) if source else None,
-                        invoice_delivery_date=invoice_delivery_date_str,
-                        currency=currency,
-                        invoice_net_amount=Decimal(str(invoice_net_amount)) if invoice_net_amount else None,
-                        invoice_net_amount_huf=Decimal(str(invoice_net_amount_huf)) if invoice_net_amount_huf else None,
-                        invoice_vat_amount=Decimal(str(invoice_vat_amount)) if invoice_vat_amount else None,
-                        invoice_vat_amount_huf=Decimal(str(invoice_vat_amount_huf)) if invoice_vat_amount_huf else None,
-                        transaction_id=transaction_id,
-                        index=index,
-                        original_invoice_number=original_invoice_number,
-                        modification_index=modification_index,
-                        completeness_indicator=completeness_indicator,
-                    )
-
-                    invoice_digests.append(digest)
-
-                except Exception as e:
-                    logger.warning(f"Failed to parse invoice element: {e}")
-                    continue
-
-            # Parse pagination info
-            current_page = None
-            available_page = None
-            available_count = None
-
-            digest_result_elements = find_xml_elements_with_namespace_aware(
-                dom, "invoiceDigestResult"
-            )
-
-            if digest_result_elements:
-                digest_result = digest_result_elements[0]
-                current_page_str = get_xml_element_value(
-                    digest_result, "currentPage", ""
-                )
-                available_page_str = get_xml_element_value(
-                    digest_result, "availablePage", ""
-                )
-                available_count_str = get_xml_element_value(
-                    digest_result, "availableCount", ""
-                )
-
-                current_page = int(current_page_str) if current_page_str else None
-                available_page = int(available_page_str) if available_page_str else None
-                available_count = (
-                    int(available_count_str) if available_count_str else None
-                )
-
-                logger.debug(
-                    f"Pagination: current_page={current_page}, available_page={available_page}, available_count={available_count}"
-                )
-            else:
-                logger.warning("No invoiceDigestResult element found in response")
-
-            return QueryInvoiceDigestResponseType(
-                header=header,
-                result=result,
-                software=None,  # Software info not typically in digest response
-                invoice_digest_result=InvoiceDigestResultType(
-                    current_page=current_page,
-                    available_page=available_page,
-                    invoice_digest=invoice_digests,
-                ),
-            )
-
-        except NavApiException:
-            raise
-        except Exception as e:
-            raise NavXmlParsingException(
-                f"Failed to parse invoice digest response: {str(e)}"
-            )
-
     def get_invoice_detail(
         self,
         credentials: NavCredentials,
@@ -1628,7 +937,7 @@ class NavOnlineInvoiceClient:
         invoice_direction: InvoiceDirectionType,
         supplier_tax_number: Optional[str] = None,
         batch_index: Optional[int] = None,
-    ) -> QueryInvoiceDataResponseType:
+    ) -> InvoiceData:
         """
         Get detailed information for a specific invoice.
 
@@ -1640,175 +949,22 @@ class NavOnlineInvoiceClient:
             batch_index: Optional batch index for batched invoices
 
         Returns:
-            QueryInvoiceDataResponseType: API-compliant response with detailed invoice data
+            InvoiceData: Fully parsed invoice data as a dataclass
 
         Raises:
             NavValidationException: If parameters are invalid
             NavInvoiceNotFoundException: If invoice not found
             NavApiException: If API request fails
         """
-        self.validate_credentials(credentials)
-
-        if not invoice_number:
-            raise NavValidationException("Invoice number is required")
-
-        try:
-            xml_request = self._build_query_invoice_data_xml(
-                credentials,
-                invoice_number,
-                invoice_direction,
-                supplier_tax_number,
-                batch_index,
-            )
-            response = self.http_client.post("queryInvoiceData", xml_request)
-
-            return self._parse_invoice_detail_response(response.text)
-
-        except Exception as e:
-            if is_network_error(str(e)):
-                logger.error(f"Network error after retries: {e}")
-                raise NavApiException(f"Network error: {str(e)}")
-            raise
-
-    def _parse_invoice_detail_response(self, xml_response: str) -> InvoiceDataType:
-        """
-        Parse invoice detail response from XML.
-
-        Args:
-            xml_response: XML response string
-
-        Returns:
-            InvoiceDataType: Parsed invoice data with basic information
-        """
-        try:
-            dom = parse_xml_safely(xml_response)
-
-            # Check for errors first
-            error_elements = find_xml_elements_with_namespace_aware(dom, "errorCode")
-            if error_elements:
-                error_info = self._parse_error_response(xml_response)
-                if error_info.error_code in ["INVOICE_NOT_FOUND", "NO_INVOICE_FOUND"]:
-                    raise NavInvoiceNotFoundException(
-                        f"Invoice not found: {error_info.message}"
-                    )
-                raise NavApiException(
-                    f"NAV API Error: {error_info.error_code} - {error_info.message}"
-                )
-
-            # Extract the base64 encoded invoice data
-            invoice_data_elements = find_xml_elements_with_namespace_aware(
-                dom, "invoiceData"
-            )
-            if not invoice_data_elements:
-                raise NavXmlParsingException("No invoice data found in response")
-
-            # Decode the base64 invoice data
-            encoded_invoice_data = invoice_data_elements[0].firstChild.nodeValue
-            if not encoded_invoice_data:
-                raise NavXmlParsingException("Empty invoice data in response")
-
-            # Decode from base64
-            decoded_invoice_xml = base64.b64decode(encoded_invoice_data).decode("utf-8")
-            logger.debug(f"Decoded invoice XML: {decoded_invoice_xml}")
-
-            # Parse the decoded invoice XML
-            invoice_dom = parse_xml_safely(decoded_invoice_xml)
-
-            # Extract basic invoice information
-            invoice_number = get_xml_element_value(invoice_dom, "invoiceNumber", "")
-
-            # Parse issue date
-            issue_date_str = get_xml_element_value(invoice_dom, "invoiceIssueDate", "")
-            if not issue_date_str:
-                issue_date_str = datetime.now().strftime("%Y-%m-%d")
-
-            # Parse completeness indicator
-            completeness_indicator = True  # Default to True for simplicity
-            completeness_str = get_xml_element_value(
-                invoice_dom, "completenessIndicator", ""
-            )
-            if completeness_str:
-                completeness_indicator = completeness_str.lower() == "true"
-
-            # Create a simple InvoiceDataType with just the basic required fields
-            # We'll create a minimal InvoiceMainType to satisfy the required field
-            
-            # Create minimal invoice head
-            invoice_head = InvoiceHeadType(
-                supplier_info=None,
-                customer_info=None,
-                fiscal_representative_info=None,
-                invoice_detail=None
-            )
-            
-            # Create minimal invoice main
-            invoice_main = InvoiceMainType(
-                invoice=None,
-                batch_invoice=None
-            )
-
-            # Create the invoice data object
-            invoice_data = InvoiceDataType(
-                invoice_number=invoice_number,
-                invoice_issue_date=issue_date_str,
-                completeness_indicator=completeness_indicator,
-                invoice_main=invoice_main
-            )
-
-            return invoice_data
-
-        except (NavInvoiceNotFoundException, NavApiException):
-            raise
-        except Exception as e:
-            logger.error(f"Error parsing invoice detail response: {str(e)}")
-            raise NavXmlParsingException(
-                f"Failed to parse invoice detail response: {str(e)}"
-            )
+        return self.get_invoice_data(
+            credentials=credentials,
+            invoice_number=invoice_number,
+            invoice_direction=invoice_direction,
+            supplier_tax_number=supplier_tax_number,
+            batch_index=batch_index,
+        )
 
     # New methods using API-compliant request types
-
-    def query_invoice_digest(
-        self, credentials: NavCredentials, request: QueryInvoiceDigestRequest
-    ) -> QueryInvoiceDigestResponseType:
-        """
-        Query invoice digests using the official API request structure.
-
-        Args:
-            credentials: NAV API credentials
-            request: QueryInvoiceDigestRequest with proper API structure
-
-        Returns:
-            QueryInvoiceDigestResponseType: API-compliant response with invoice digests
-
-        Raises:
-            NavValidationException: If request validation fails
-            NavApiException: If API call fails
-        """
-        try:
-            # Validate credentials
-            self.validate_credentials(credentials)
-
-            # Build XML request
-            xml_request = self._build_query_invoice_digest_request_xml(
-                credentials, request
-            )
-            logger.debug(f"Sending QueryInvoiceDigest XML request: {xml_request}")
-
-            # Make API call
-            with self.http_client as client:
-                response = client.post("/queryInvoiceDigest", xml_request)
-                xml_response = response.text
-
-            logger.debug(f"Received QueryInvoiceDigest XML response: {xml_response}")
-
-            # Parse response
-            return self._parse_api_compliant_invoice_digest_response(xml_response)
-
-        except (NavValidationException, NavApiException):
-            raise
-        except Exception as e:
-            logger.error(f"Unexpected error in query_invoice_digest: {str(e)}")
-            raise NavApiException(f"Unexpected error: {str(e)}")
 
     def query_invoice_check(
         self, credentials: NavCredentials, request: QueryInvoiceCheckRequest
@@ -1861,47 +1017,6 @@ class NavOnlineInvoiceClient:
             raise
         except Exception as e:
             logger.error(f"Unexpected error in query_invoice_check: {str(e)}")
-            raise NavApiException(f"Unexpected error: {str(e)}")
-
-    def query_invoice_data(
-        self, credentials: NavCredentials, request: QueryInvoiceDataRequest
-    ) -> Optional[InvoiceDetailType]:
-        """
-        Get full invoice data using the official API request structure.
-
-        Args:
-            credentials: NAV API credentials
-            request: QueryInvoiceDataRequest with proper API structure
-
-        Returns:
-            Optional[InvoiceDetail]: Invoice detail if found, None otherwise
-
-        Raises:
-            NavValidationException: If request validation fails
-            NavApiException: If API call fails
-        """
-        try:
-            # Validate credentials
-            self.validate_credentials(credentials)
-
-            # Build XML request
-            xml_request = self._build_query_invoice_data_request_xml(
-                credentials, request
-            )
-
-            # Make API call
-            with self.http_client as client:
-                response = client.post("/queryInvoiceData", xml_request)
-
-            # Parse response
-            return self._parse_invoice_detail_response(response.text)
-
-        except NavInvoiceNotFoundException:
-            return None
-        except (NavValidationException, NavApiException):
-            raise
-        except Exception as e:
-            logger.error(f"Unexpected error in query_invoice_data: {str(e)}")
             raise NavApiException(f"Unexpected error: {str(e)}")
 
     def query_invoice_chain_digest(

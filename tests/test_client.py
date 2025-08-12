@@ -11,7 +11,7 @@ from nav_online_szamla.models import (
     InvoiceDirectionType,
     QueryInvoiceDigestRequest,
     MandatoryQueryParamsType,
-    DateIntervalParamType,
+    DateTimeIntervalParamType,
     InvoiceQueryParamsType,
     QueryInvoiceCheckRequest,
     InvoiceNumberQueryType,
@@ -112,29 +112,30 @@ class TestNavOnlineInvoiceClient:
             # Mock query invoice digest
             m.post(
                 f"{client.base_url}queryInvoiceDigest",
-                text="""<?xml version="1.0" encoding="UTF-8"?>
-                <QueryInvoiceDigestResponse>
-                    <header>
-                        <requestId>test-123</requestId>
-                        <timestamp>2023-01-01T12:00:00Z</timestamp>
-                        <requestVersion>3.0</requestVersion>
-                        <headerVersion>1.0</headerVersion>
-                    </header>
-                    <result>
-                        <funcCode>OK</funcCode>
-                    </result>
+                text="""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+                <QueryInvoiceDigestResponse xmlns="http://schemas.nav.gov.hu/OSA/3.0/api" 
+                                           xmlns:ns2="http://schemas.nav.gov.hu/NTCA/1.0/common" 
+                                           xmlns:ns3="http://schemas.nav.gov.hu/OSA/3.0/base">
+                    <ns2:header>
+                        <ns2:requestId>test-123</ns2:requestId>
+                        <ns2:timestamp>2023-01-01T12:00:00Z</ns2:timestamp>
+                        <ns2:requestVersion>3.0</ns2:requestVersion>
+                        <ns2:headerVersion>1.0</ns2:headerVersion>
+                    </ns2:header>
+                    <ns2:result>
+                        <ns2:funcCode>OK</ns2:funcCode>
+                    </ns2:result>
                     <invoiceDigestResult>
-                        <availableCount>1</availableCount>
+                        <currentPage>1</currentPage>
+                        <availablePage>1</availablePage>
                         <invoiceDigest>
                             <invoiceNumber>TEST001</invoiceNumber>
-                            <invoiceDirection>OUTBOUND</invoiceDirection>
-                            <batchIndex>1</batchIndex>
                             <invoiceOperation>CREATE</invoiceOperation>
+                            <invoiceCategory>NORMAL</invoiceCategory>
+                            <invoiceIssueDate>2023-01-01</invoiceIssueDate>
                             <supplierTaxNumber>12345678</supplierTaxNumber>
-                            <customerTaxNumber>87654321</customerTaxNumber>
+                            <supplierName>Test Supplier</supplierName>
                             <insDate>2023-01-01T10:00:00Z</insDate>
-                            <completenessIndicator>true</completenessIndicator>
-                            <originalRequestVersion>3.0</originalRequestVersion>
                         </invoiceDigest>
                     </invoiceDigestResult>
                 </QueryInvoiceDigestResponse>""",
@@ -145,15 +146,19 @@ class TestNavOnlineInvoiceClient:
                 invoice_direction=InvoiceDirectionType.OUTBOUND,
                 invoice_query_params=InvoiceQueryParamsType(
                     mandatory_query_params=MandatoryQueryParamsType(
-                        ins_date=DateIntervalParamType(
-                            date_from="2023-01-01",
-                            date_to="2023-01-31",
+                        ins_date=DateTimeIntervalParamType(
+                            date_time_from="2023-01-01T00:00:00Z",
+                            date_time_to="2023-01-31T23:59:59Z",
                         )
                     )
                 ),
             )
 
-            response = client.query_invoice_digest(sample_credentials, request)
+            response = client.query_invoice_digest(
+                page=request.page,
+                invoice_direction=request.invoice_direction,
+                invoice_query_params=request.invoice_query_params
+            )
 
             assert response.invoice_digest_result is not None
             assert len(response.invoice_digest_result.invoice_digest) == 1
@@ -193,19 +198,22 @@ class TestNavOnlineInvoiceClient:
             # Mock query invoice data
             m.post(
                 f"{client.base_url}queryInvoiceData",
-                text="""<?xml version="1.0" encoding="UTF-8"?>
-                <QueryInvoiceDataResponse>
-                    <header>
-                        <requestId>test-123</requestId>
-                        <timestamp>2023-01-01T12:00:00Z</timestamp>
-                        <requestVersion>3.0</requestVersion>
-                        <headerVersion>1.0</headerVersion>
-                    </header>
-                    <r>
-                        <funcCode>OK</funcCode>
-                    </r>
+                text="""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+                <QueryInvoiceDataResponse xmlns="http://schemas.nav.gov.hu/OSA/3.0/api" 
+                                         xmlns:ns2="http://schemas.nav.gov.hu/NTCA/1.0/common" 
+                                         xmlns:ns3="http://schemas.nav.gov.hu/OSA/3.0/base" 
+                                         xmlns:ns4="http://schemas.nav.gov.hu/OSA/3.0/data">
+                    <ns2:header>
+                        <ns2:requestId>test-123</ns2:requestId>
+                        <ns2:timestamp>2023-01-01T12:00:00Z</ns2:timestamp>
+                        <ns2:requestVersion>3.0</ns2:requestVersion>
+                        <ns2:headerVersion>1.0</ns2:headerVersion>
+                    </ns2:header>
+                    <ns2:result>
+                        <ns2:funcCode>OK</ns2:funcCode>
+                    </ns2:result>
                     <invoiceDataResult>
-                        <invoiceData>PGludm9pY2VEYXRhPjxpbnZvaWNlTnVtYmVyPlRFU1QwMDE8L2ludm9pY2VOdW1iZXI+PGludm9pY2VJc3N1ZURhdGU+MjAyMy0wMS0wMTwvaW52b2ljZUlzc3VlRGF0ZT48L2ludm9pY2VEYXRhPg==</invoiceData>
+                        <invoiceData>PEludm9pY2VEYXRhIHhtbG5zPSJodHRwOi8vc2NoZW1hcy5uYXYuZ292Lmh1L09TQS8zLjAvZGF0YSIgeG1sbnM6bnMyPSJodHRwOi8vc2NoZW1hcy5uYXYuZ292Lmh1L09TQS8zLjAvYmFzZSI+PGludm9pY2VOdW1iZXI+VEVTVDAwMTwvaW52b2ljZU51bWJlcj48aW52b2ljZUlzc3VlRGF0ZT4yMDIzLTAxLTAxPC9pbnZvaWNlSXNzdWVEYXRlPjwvSW52b2ljZURhdGE+</invoiceData>
                     </invoiceDataResult>
                 </QueryInvoiceDataResponse>""",
             )
