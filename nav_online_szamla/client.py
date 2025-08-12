@@ -63,6 +63,7 @@ from .models import (
     QueryInvoiceChainDigestRequest,
     # Response wrappers 
     QueryInvoiceDataResponse,
+    QueryInvoiceDataResponseType,
     # Invoice data types
     InvoiceData,
     InvoiceDataType,
@@ -193,7 +194,7 @@ class NavOnlineInvoiceClient:
     def _serialize_request_to_xml(self, request_obj) -> str:
         """Serialize a request object to XML using xsdata with proper namespace formatting."""
         config = SerializerConfig(
-            pretty_print=True,
+            indent="  ",  # Use indent instead of pretty_print
             xml_declaration=True,
             encoding="UTF-8"
         )
@@ -203,6 +204,50 @@ class NavOnlineInvoiceClient:
         
         # Format with custom namespace prefixes to match NAV expected format
         return self._format_xml_with_custom_namespaces(xml_output)
+    
+    def _parse_response_from_xml(self, xml_response: str, response_class):
+        """
+        Generic function for parsing XML responses using xsdata.
+        
+        This function provides automatic parsing of NAV API responses to typed dataclasses:
+        1. Takes raw XML response string
+        2. Uses xsdata parser with the provided response class
+        3. Returns fully typed response object
+        4. Handles parsing errors appropriately
+        
+        Args:
+            xml_response: Raw XML response string from NAV API
+            response_class: The dataclass type to parse into (e.g., QueryInvoiceDataResponse)
+            
+        Returns:
+            Parsed response object of the specified type
+            
+        Raises:
+            NavXmlParsingException: If XML parsing fails
+            NavApiException: If response contains API errors
+        """
+        try:
+            # Parse XML to response object using xsdata
+            response_obj = self.xml_parser.from_string(xml_response, response_class)
+            
+            # Check for API errors in the response
+            if hasattr(response_obj, 'result') and response_obj.result:
+                func_code = response_obj.result.func_code
+                # Handle both enum and string values
+                func_code_value = func_code.value if hasattr(func_code, 'value') else str(func_code)
+                
+                if func_code_value != 'OK':
+                    error_code = getattr(response_obj.result, 'error_code', 'UNKNOWN_ERROR')
+                    message = getattr(response_obj.result, 'message', 'No error message provided')
+                    raise NavApiException(f"API Error: {error_code} - {message}")
+            
+            return response_obj
+            
+        except Exception as e:
+            if isinstance(e, NavApiException):
+                raise
+            logger.error(f"Failed to parse XML response: {e}")
+            raise NavXmlParsingException(f"Failed to parse response XML: {e}")
     
     def _format_xml_with_custom_namespaces(self, xml_string: str) -> str:
         """
@@ -284,16 +329,31 @@ class NavOnlineInvoiceClient:
         invoice_direction: InvoiceDirectionType,
         batch_index: Optional[int] = None,
         supplier_tax_number: Optional[str] = None
-    ) -> QueryInvoiceDataResponseType:
+    ) -> QueryInvoiceDataResponse:
         """
         Query invoice data using xsdata-generated dataclasses.
-        This demonstrates the new approach using automatic XML serialization.
+        This demonstrates the new approach using automatic XML serialization and parsing.
+        
+        Args:
+            invoice_number: Invoice number to query
+            invoice_direction: Invoice direction (OUTBOUND/INBOUND)
+            batch_index: Optional batch index for batched invoices
+            supplier_tax_number: Optional supplier tax number
+            
+        Returns:
+            QueryInvoiceDataResponse: Fully parsed response with typed invoice data
+            
+        Raises:
+            NavValidationException: If parameters are invalid
+            NavInvoiceNotFoundException: If invoice not found
+            NavApiException: If API request fails
+            NavXmlParsingException: If XML parsing fails
         """
         if not invoice_number:
             raise NavValidationException("Invoice number is required")
 
         try:
-            # Create the request using generated models
+            # Create request using xsdata dataclasses
             request = self.create_query_invoice_data_request(
                 credentials=self.credentials,
                 invoice_number=invoice_number,
@@ -301,24 +361,65 @@ class NavOnlineInvoiceClient:
                 batch_index=batch_index,
                 supplier_tax_number=supplier_tax_number
             )
-
-            # Serialize to XML using xsdata
-            request_xml = self._serialize_request_to_xml(request)
-
-            # Send the request
-            headers = {"Content-Type": "application/xml"}
+            
+            # Serialize request to XML
+            xml_request = self._serialize_request_to_xml(request)
+            
+            # Make API call
             with self.http_client as client:
-                response = client.post("/queryInvoiceData", request_xml, headers)
-                response_xml = response.text
+                response = client.post("queryInvoiceData", xml_request)
+                xml_response = response.text
+            
+            # Parse response using generic parsing function
+            parsed_response = self._parse_response_from_xml(xml_response, QueryInvoiceDataResponse)
+            
+            # Check if invoice was found
+            if not parsed_response.invoice_data_result or not parsed_response.invoice_data_result.invoice_data:
+                raise NavInvoiceNotFoundException(f"Invoice {invoice_number} not found")
 
-            # Parse the response (this would also use xsdata for parsing)
-            return self._parse_invoice_detail_response(response_xml)
+            logger.info(f"Successfully queried invoice data for {invoice_number}")
+            # Parse the Base64 encoded invoice data
+            if parsed_response.invoice_data_result.invoice_data:
+                try:
+                    # The invoice_data field is already decoded from Base64 by xsdata, 
+                    # but it's in bytes format containing XML
+                    xml_bytes = parsed_response.invoice_data_result.invoice_data
+                    
+                    # Try multiple encodings to decode bytes to XML string
+                    xml_content = None
+                    for encoding in ['utf-8', 'latin-1', 'cp1252']:
+                        try:
+                            logger.info(f"Trying to decode with {encoding}")
+                            xml_content = xml_bytes.decode(encoding)
+                            logger.info(f"Successfully decoded with {encoding}")
+                            break
+                        except UnicodeDecodeError:
+                            continue
+                    
+                    if xml_content is None:
+                        # Last resort - decode with error replacement
+                        xml_content = xml_bytes.decode('utf-8', errors='replace')
+                    
+                    # Parse the decoded XML into InvoiceData object
+                    from nav_online_szamla.models import InvoiceData
+                    parsed_invoice_data = self._parse_response_from_xml(xml_content, InvoiceData)
+                    
+                    # Replace the bytes with the parsed object
+                    parsed_response.invoice_data_result.invoice_data = parsed_invoice_data
+                    logger.info(f"Successfully parsed invoice data XML for {invoice_number}")
+                    
+                except Exception as e:
+                    logger.warning(f"Failed to parse invoice data XML: {e}")
+                    # Keep the original bytes data if parsing fails
+            
+            logger.info(f"Successfully queried invoice data for {invoice_number}")
+            return parsed_response
 
         except Exception as e:
-            if isinstance(e, (NavApiException, NavValidationException)):
+            if isinstance(e, (NavValidationException, NavInvoiceNotFoundException, NavApiException, NavXmlParsingException)):
                 raise
-            logger.error(f"Unexpected error in query_invoice_data_with_xsdata: {e}")
-            raise NavApiException(f"Failed to query invoice data: {str(e)}")
+            logger.error(f"Unexpected error querying invoice data: {e}")
+            raise NavApiException(f"Failed to query invoice data: {e}")
 
     def demonstrate_xsdata_serialization(self, credentials: NavCredentials) -> str:
         """
