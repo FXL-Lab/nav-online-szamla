@@ -164,24 +164,6 @@ class TestNavOnlineInvoiceClient:
             assert len(response.invoice_digest_result.invoice_digest) == 1
             assert response.invoice_digest_result.invoice_digest[0].invoice_number == "TEST001"
 
-    def test_parse_invoice_digest_response_error(self, mock_error_response):
-        """Test parsing of error response in invoice digest."""
-        credentials = self._get_test_credentials()
-        client = NavOnlineInvoiceClient(credentials)
-
-        with pytest.raises(NavApiException, match="INVALID_CREDENTIALS"):
-            client._parse_invoice_digest_response(mock_error_response)
-
-    def test_parse_error_response(self, mock_error_response):
-        """Test error response parsing."""
-        credentials = self._get_test_credentials()
-        client = NavOnlineInvoiceClient(credentials)
-
-        error_info = client._parse_error_response(mock_error_response)
-
-        assert error_info.error_code == "INVALID_CREDENTIALS"
-        assert error_info.message == "Invalid authentication credentials"
-
     def test_get_invoice_data_success(self, sample_credentials):
         """Test successful invoice detail retrieval."""
         client = NavOnlineInvoiceClient(sample_credentials)

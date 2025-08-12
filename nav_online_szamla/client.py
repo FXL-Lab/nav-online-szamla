@@ -9,7 +9,6 @@ from datetime import datetime
 from typing import List, Optional
 from decimal import Decimal
 import json
-import base64
 
 from xsdata.formats.dataclass.context import XmlContext
 from xsdata.formats.dataclass.serializers import XmlSerializer
@@ -30,30 +29,19 @@ from .models import (
     # Official API types from generated models
     InvoiceDirectionType,
     InvoiceDigestType,
-    QueryInvoiceDigestResponseType,
-    QueryInvoiceCheckResponseType,
-    QueryInvoiceDataResponseType,
-    QueryInvoiceDigestRequestType,
-    QueryInvoiceDataRequestType,
     QueryInvoiceChainDigestRequestType,
     BasicResultType,
     BasicHeaderType,
     ManageInvoiceOperationType,
-    InvoiceCategoryType,
-    PaymentMethodType,
-    InvoiceAppearanceType,
     SourceType,
     FunctionCodeType,
     # Additional types from generated models
     InvoiceDigestType,
-    InvoiceDigestResultType,
     InvoiceDetailType,
     DateIntervalParamType,
     MandatoryQueryParamsType,
     InvoiceQueryParamsType,
     CryptoType,
-    # Data structure types
-    InvoiceDataType,
     # Query parameter types
     InvoiceNumberQueryType,
     # Request wrappers (root elements)
@@ -63,16 +51,11 @@ from .models import (
     QueryInvoiceChainDigestRequest,
     # Response wrappers 
     QueryInvoiceDataResponse,
-    QueryInvoiceDataResponseType,
     QueryInvoiceDigestResponse,
     QueryInvoiceCheckResponse,
+    QueryInvoiceChainDigestResponse,
     # Invoice data types
     InvoiceData,
-    InvoiceDataType,
-    QueryInvoiceChainDigestRequest,
-    # Additional imports needed in the file
-    InvoiceMainType,
-    InvoiceHeadType,
     # Common types
     UserHeaderType,
     SoftwareType,
@@ -97,7 +80,6 @@ from .utils import (
     parse_xml_safely,
     get_xml_element_value,
     format_timestamp_for_nav,
-    is_network_error,
     find_xml_elements_with_namespace_aware,
 )
 from .http_client import NavHttpClient
@@ -354,7 +336,65 @@ class NavOnlineInvoiceClient:
             software=software,
             invoice_number_query=invoice_number_query
         )
+
+    def query_invoice_digest(
+        self,
+        page: int,
+        invoice_direction: InvoiceDirectionType,
+        invoice_query_params: InvoiceQueryParamsType
+    ) -> QueryInvoiceDigestResponse:
+        """
+        Query invoice digest using xsdata-generated dataclasses.
+        This uses automatic XML serialization and parsing for type-safe API interactions.
         
+        Args:
+            page: Page number for pagination (1-based)
+            invoice_direction: Invoice direction (OUTBOUND/INBOUND)
+            invoice_query_params: Query parameters (date range, supplier info, etc.)
+            
+        Returns:
+            QueryInvoiceDigestResponse: Fully parsed response with typed invoice digests
+            
+        Raises:
+            NavValidationException: If parameters are invalid
+            NavApiException: If API request fails
+            NavXmlParsingException: If XML parsing fails
+        """
+        if page < 1:
+            raise NavValidationException("Page number must be >= 1")
+
+        if not invoice_query_params:
+            raise NavValidationException("Invoice query parameters are required")
+
+        try:
+            # Create request using xsdata dataclasses
+            request = self.create_query_invoice_digest_request(
+                credentials=self.credentials,
+                page=page,
+                invoice_direction=invoice_direction,
+                invoice_query_params=invoice_query_params
+            )
+            
+            # Serialize request to XML
+            xml_request = self._serialize_request_to_xml(request)
+            
+            # Make API call
+            with self.http_client as client:
+                response = client.post("queryInvoiceDigest", xml_request)
+                xml_response = response.text
+            
+            # Parse response using generic parsing function
+            parsed_response = self._parse_response_from_xml(xml_response, QueryInvoiceDigestResponse)
+            
+            logger.info(f"Successfully queried invoice digest for page {page}")
+            return parsed_response
+
+        except Exception as e:
+            if isinstance(e, (NavValidationException, NavApiException, NavXmlParsingException)):
+                raise
+            logger.error(f"Unexpected error querying invoice digest: {e}")
+            raise NavApiException(f"Failed to query invoice digest: {e}")
+      
     def query_invoice_data(
         self,
         invoice_number: str,
@@ -447,6 +487,134 @@ class NavOnlineInvoiceClient:
             logger.error(f"Unexpected error querying invoice data: {e}")
             raise NavApiException(f"Failed to query invoice data: {e}")
 
+    def query_invoice_check(
+        self, request: QueryInvoiceCheckRequest
+    ) -> QueryInvoiceCheckResponse:
+        """
+        Check if an invoice exists using xsdata-generated dataclasses.
+        This uses automatic XML serialization and parsing for type-safe API interactions.
+
+        Args:
+            request: QueryInvoiceCheckRequest with proper API structure
+
+        Returns:
+            QueryInvoiceCheckResponse: Fully parsed response with typed check results
+
+        Raises:
+            NavValidationException: If request validation fails
+            NavApiException: If API call fails
+            NavXmlParsingException: If XML parsing fails
+        """
+        try:
+            # Serialize request to XML
+            xml_request = self._serialize_request_to_xml(request)
+            
+            # Make API call
+            with self.http_client as client:
+                response = client.post("queryInvoiceCheck", xml_request)
+                xml_response = response.text
+
+            # Parse response using generic parsing function
+            parsed_response = self._parse_response_from_xml(xml_response, QueryInvoiceCheckResponse)
+            
+            logger.info(f"Successfully checked invoice: {request.invoice_number_query.invoice_number}")
+            return parsed_response
+
+        except Exception as e:
+            if isinstance(e, (NavApiException, NavValidationException, NavXmlParsingException)):
+                raise
+            logger.error(f"Unexpected error in query_invoice_check: {e}")
+            raise NavApiException(f"Failed to check invoice: {str(e)}")
+
+    def create_query_invoice_chain_digest_request(
+        self,
+        page: int,
+        invoice_number: str,
+        invoice_direction: InvoiceDirectionType,
+        tax_number: Optional[str] = None
+    ) -> QueryInvoiceChainDigestRequest:
+        """Create a QueryInvoiceChainDigestRequest using generated models."""
+        
+        header = self._create_basic_header()
+        user = self._create_user_header(self.credentials, header)
+        software = self._create_software_info(self.credentials)
+        
+        return QueryInvoiceChainDigestRequest(
+            header=header,
+            user=user,
+            software=software,
+            page=page,
+            invoice_number=invoice_number,
+            invoice_direction=invoice_direction,
+            tax_number=tax_number
+        )
+
+    def query_invoice_chain_digest(
+        self, request: QueryInvoiceChainDigestRequest
+    ) -> QueryInvoiceChainDigestResponse:
+        """
+        Query invoice chain digests using xsdata-generated dataclasses.
+        This uses automatic XML serialization and parsing for type-safe API interactions.
+
+        Args:
+            request: QueryInvoiceChainDigestRequest with proper API structure
+
+        Returns:
+            QueryInvoiceChainDigestResponse: Fully parsed response with typed chain digest data
+
+        Raises:
+            NavValidationException: If request validation fails
+            NavApiException: If API call fails
+            NavXmlParsingException: If XML parsing fails
+        """
+        try:
+            # Serialize request to XML
+            xml_request = self._serialize_request_to_xml(request)
+            
+            # Make API call
+            with self.http_client as client:
+                response = client.post("queryInvoiceChainDigest", xml_request)
+                xml_response = response.text
+
+            # Parse response using generic parsing function
+            parsed_response = self._parse_response_from_xml(xml_response, QueryInvoiceChainDigestResponse)
+            
+            logger.info(f"Successfully queried invoice chain digest for: {request.invoice_number}")
+            return parsed_response
+
+        except Exception as e:
+            if isinstance(e, (NavApiException, NavValidationException, NavXmlParsingException)):
+                raise
+            logger.error(f"Unexpected error in query_invoice_chain_digest: {e}")
+            raise NavApiException(f"Failed to query invoice chain digest: {str(e)}")
+
+    def get_invoice_chain_digest(
+        self,
+        page: int,
+        invoice_number: str,
+        invoice_direction: InvoiceDirectionType = InvoiceDirectionType.OUTBOUND,
+        tax_number: Optional[str] = None
+    ) -> QueryInvoiceChainDigestResponse:
+        """
+        Convenience method to get invoice chain digest with automatic request creation.
+        
+        Args:
+            page: Page number for pagination
+            invoice_number: Invoice number to query
+            invoice_direction: Direction of the invoice (default: OUTBOUND)
+            tax_number: Optional tax number filter
+        
+        Returns:
+            QueryInvoiceChainDigestResponse: Complete response with chain digest data
+        """
+        request = self.create_query_invoice_chain_digest_request(
+            page=page,
+            invoice_number=invoice_number,
+            invoice_direction=invoice_direction,
+            tax_number=tax_number
+        )
+        return self.query_invoice_chain_digest(request)
+
     def get_invoice_data(
         self,
         invoice_number: str,
@@ -506,64 +674,6 @@ class NavOnlineInvoiceClient:
             logger.error(f"Unexpected error in get_invoice_data: {e}")
             raise NavApiException(f"Failed to get invoice data: {str(e)}")
 
-    def query_invoice_digest(
-        self,
-        page: int,
-        invoice_direction: InvoiceDirectionType,
-        invoice_query_params: InvoiceQueryParamsType
-    ) -> QueryInvoiceDigestResponse:
-        """
-        Query invoice digest using xsdata-generated dataclasses.
-        This uses automatic XML serialization and parsing for type-safe API interactions.
-        
-        Args:
-            page: Page number for pagination (1-based)
-            invoice_direction: Invoice direction (OUTBOUND/INBOUND)
-            invoice_query_params: Query parameters (date range, supplier info, etc.)
-            
-        Returns:
-            QueryInvoiceDigestResponse: Fully parsed response with typed invoice digests
-            
-        Raises:
-            NavValidationException: If parameters are invalid
-            NavApiException: If API request fails
-            NavXmlParsingException: If XML parsing fails
-        """
-        if page < 1:
-            raise NavValidationException("Page number must be >= 1")
-
-        if not invoice_query_params:
-            raise NavValidationException("Invoice query parameters are required")
-
-        try:
-            # Create request using xsdata dataclasses
-            request = self.create_query_invoice_digest_request(
-                credentials=self.credentials,
-                page=page,
-                invoice_direction=invoice_direction,
-                invoice_query_params=invoice_query_params
-            )
-            
-            # Serialize request to XML
-            xml_request = self._serialize_request_to_xml(request)
-            
-            # Make API call
-            with self.http_client as client:
-                response = client.post("queryInvoiceDigest", xml_request)
-                xml_response = response.text
-            
-            # Parse response using generic parsing function
-            parsed_response = self._parse_response_from_xml(xml_response, QueryInvoiceDigestResponse)
-            
-            logger.info(f"Successfully queried invoice digest for page {page}")
-            return parsed_response
-
-        except Exception as e:
-            if isinstance(e, (NavValidationException, NavApiException, NavXmlParsingException)):
-                raise
-            logger.error(f"Unexpected error querying invoice digest: {e}")
-            raise NavApiException(f"Failed to query invoice digest: {e}")
-
     def get_token(self) -> str:
         """
         Get exchange token from NAV API.
@@ -612,261 +722,6 @@ class NavOnlineInvoiceClient:
                 "message", "Token exchange failed"
             )
             raise NavApiException(f"{error_code}: {message}")
-
-    def _build_query_invoice_chain_digest_request_xml(
-        self, request: QueryInvoiceChainDigestRequestType
-    ) -> str:
-        """Build XML for QueryInvoiceChainDigest request according to API specification."""
-        request_id = generate_custom_id()
-        timestamp = format_timestamp_for_nav()
-        password_hash = generate_password_hash(self.credentials.password)
-        request_signature = calculate_request_signature(
-            request_id, timestamp, self.credentials.signer_key
-        )
-
-        tax_number_filter = ""
-        if request.tax_number:
-            tax_number_filter = f"<taxNumber>{request.tax_number}</taxNumber>"
-
-        return f"""<?xml version="1.0" encoding="UTF-8"?>
-<QueryInvoiceChainDigestRequest xmlns="http://schemas.nav.gov.hu/OSA/3.0/api" xmlns:common="http://schemas.nav.gov.hu/NTCA/1.0/common">
-    <common:header>
-        <common:requestId>{request_id}</common:requestId>
-        <common:timestamp>{timestamp}</common:timestamp>
-        <common:requestVersion>3.0</common:requestVersion>
-        <common:headerVersion>1.0</common:headerVersion>
-    </common:header>
-    <common:user>
-        <common:login>{self.credentials.login}</common:login>
-        <common:passwordHash cryptoType="SHA-512">{password_hash}</common:passwordHash>
-        <common:taxNumber>{self.credentials.tax_number}</common:taxNumber>
-        <common:requestSignature cryptoType="SHA3-512">{request_signature}</common:requestSignature>
-    </common:user>
-    <software>
-        <softwareId>{SOFTWARE_ID}</softwareId>
-        <softwareName>{SOFTWARE_NAME}</softwareName>
-        <softwareOperation>LOCAL_SOFTWARE</softwareOperation>
-        <softwareMainVersion>{SOFTWARE_VERSION}</softwareMainVersion>
-        <softwareDevName>{SOFTWARE_DEV_NAME}</softwareDevName>
-        <softwareDevContact>{SOFTWARE_DEV_CONTACT}</softwareDevContact>
-        <softwareDevCountryCode>{SOFTWARE_DEV_COUNTRY}</softwareDevCountryCode>
-        <softwareDevTaxNumber>{self.credentials.tax_number}</softwareDevTaxNumber>
-    </software>
-    <page>{request.page}</page>
-    <invoiceNumber>{request.invoice_number}</invoiceNumber>
-    <invoiceDirection>{request.invoice_direction.value}</invoiceDirection>
-    {tax_number_filter}
-</QueryInvoiceChainDigestRequest>"""
-
-    def _parse_error_response(self, xml_response: str) -> BasicResultType:
-        """
-        Parse error response from NAV API.
-
-        Args:
-            xml_response: XML response string
-
-        Returns:
-            BasicResultType: Parsed error information
-        """
-        try:
-            # Parse the XML to extract error information
-            dom = parse_xml_safely(xml_response)
-            
-            error_code = get_xml_element_value(dom, "errorCode", "UNKNOWN")
-            message = get_xml_element_value(dom, "message", "Unknown error")
-            
-            return BasicResultType(
-                func_code=FunctionCodeType.ERROR,
-                error_code=error_code,
-                message=message
-            )
-        except Exception as e:
-            logger.error(f"Failed to parse error response: {e}")
-            return BasicResultType(
-                func_code=FunctionCodeType.ERROR,
-                error_code="XML_PARSE_ERROR",
-                message=f"Failed to parse error response: {str(e)}"
-            )
-
-    def _parse_invoice_digest_response(self, xml_response: str) -> List[InvoiceDigestType]:
-        """
-        Parse invoice digest response from XML.
-
-        Args:
-            xml_response: XML response string
-
-        Returns:
-            List[InvoiceDigestType]: List of invoice digests
-        """
-        try:
-            dom = parse_xml_safely(xml_response)
-
-            # Check for errors first
-            error_elements = find_xml_elements_with_namespace_aware(dom, "errorCode")
-            if error_elements:
-                error_info = self._parse_error_response(xml_response)
-                raise NavApiException(
-                    f"NAV API Error: {error_info.error_code} - {error_info.message}"
-                )
-
-            invoices = []
-            invoice_elements = find_xml_elements_with_namespace_aware(
-                dom, "invoiceDigest"
-            )
-
-            for invoice_elem in invoice_elements:
-                try:
-                    # Extract basic invoice information
-                    invoice_number = get_xml_element_value(
-                        invoice_elem, "invoiceNumber", ""
-                    )
-
-                    # Parse dates
-                    issue_date_str = get_xml_element_value(
-                        invoice_elem, "issueDate", ""
-                    )
-                    issue_date = (
-                        datetime.strptime(issue_date_str, "%Y-%m-%d")
-                        if issue_date_str
-                        else datetime.now()
-                    )
-
-                    completion_date_str = get_xml_element_value(
-                        invoice_elem, "completionDate", ""
-                    )
-                    completion_date = None
-                    if completion_date_str:
-                        try:
-                            completion_date = datetime.strptime(
-                                completion_date_str, "%Y-%m-%d"
-                            )
-                        except ValueError:
-                            pass
-
-                    # Parse amounts
-                    net_amount = float(
-                        get_xml_element_value(invoice_elem, "invoiceNetAmount", "0")
-                        or "0"
-                    )
-                    vat_amount = float(
-                        get_xml_element_value(invoice_elem, "invoiceVatAmount", "0")
-                        or "0"
-                    )
-                    gross_amount = float(
-                        get_xml_element_value(invoice_elem, "invoiceGrossAmount", "0")
-                        or "0"
-                    )
-
-                    # Parse other fields
-                    operation = get_xml_element_value(
-                        invoice_elem, "invoiceOperation", "CREATE"
-                    )
-                    supplier_name = get_xml_element_value(
-                        invoice_elem, "supplierName", ""
-                    )
-                    supplier_tax_number = get_xml_element_value(
-                        invoice_elem, "supplierTaxNumber", ""
-                    )
-                    customer_name = get_xml_element_value(
-                        invoice_elem, "customerName", ""
-                    )
-                    customer_tax_number = get_xml_element_value(
-                        invoice_elem, "customerTaxNumber", ""
-                    )
-                    currency_code = get_xml_element_value(
-                        invoice_elem, "currencyCode", "HUF"
-                    )
-                    source = get_xml_element_value(invoice_elem, "source", "UNKNOWN")
-
-                    # Parse batch index if present
-                    batch_index_str = get_xml_element_value(
-                        invoice_elem, "batchIndex", ""
-                    )
-                    batch_index = int(batch_index_str) if batch_index_str else None
-
-                    digest = InvoiceDigestType(
-                        invoice_number=invoice_number,
-                        batch_index=batch_index,
-                        invoice_operation=ManageInvoiceOperationType(operation),
-                        invoice_category=None,  # Not available in parsed data
-                        invoice_issue_date=issue_date.strftime("%Y-%m-%d") if issue_date else "",
-                        supplier_tax_number=supplier_tax_number,
-                        supplier_name=supplier_name,
-                        customer_tax_number=customer_tax_number,
-                        customer_name=customer_name,
-                        payment_method=None,  # Not available
-                        payment_date=None,    # Not available
-                        invoice_appearance=None,  # Not available
-                        source=SourceType(source) if source else None,
-                        invoice_delivery_date=completion_date.strftime("%Y-%m-%d") if completion_date else None,
-                        currency=currency_code,
-                        invoice_net_amount=Decimal(str(net_amount)) if net_amount is not None else None,
-                        invoice_net_amount_huf=None,  # Not available
-                        invoice_vat_amount=Decimal(str(vat_amount)) if vat_amount is not None else None,
-                        invoice_vat_amount_huf=None,  # Not available
-                        transaction_id=None,  # Not available
-                        index=None,           # Not available
-                        original_invoice_number=None,  # Not available
-                        modification_index=None,       # Not available
-                        ins_date=None,        # Not available
-                        completeness_indicator=None   # Not available
-                    )
-
-                    invoices.append(digest)
-
-                except Exception as e:
-                    logger.warning(f"Failed to parse invoice element: {e}")
-                    continue
-
-            return invoices
-
-        except NavApiException:
-            raise
-        except Exception as e:
-            raise NavXmlParsingException(
-                f"Failed to parse invoice digest response: {str(e)}"
-            )
-
-    # New methods using API-compliant request types
-
-    def query_invoice_check(
-        self, request: QueryInvoiceCheckRequest
-    ) -> QueryInvoiceCheckResponse:
-        """
-        Check if an invoice exists using xsdata-generated dataclasses.
-        This uses automatic XML serialization and parsing for type-safe API interactions.
-
-        Args:
-            request: QueryInvoiceCheckRequest with proper API structure
-
-        Returns:
-            QueryInvoiceCheckResponse: Fully parsed response with typed check results
-
-        Raises:
-            NavValidationException: If request validation fails
-            NavApiException: If API call fails
-            NavXmlParsingException: If XML parsing fails
-        """
-        try:
-            # Serialize request to XML
-            xml_request = self._serialize_request_to_xml(request)
-            
-            # Make API call
-            with self.http_client as client:
-                response = client.post("queryInvoiceCheck", xml_request)
-                xml_response = response.text
-
-            # Parse response using generic parsing function
-            parsed_response = self._parse_response_from_xml(xml_response, QueryInvoiceCheckResponse)
-            
-            logger.info(f"Successfully checked invoice: {request.invoice_number_query.invoice_number}")
-            return parsed_response
-
-        except Exception as e:
-            if isinstance(e, (NavApiException, NavValidationException, NavXmlParsingException)):
-                raise
-            logger.error(f"Unexpected error in query_invoice_check: {e}")
-            raise NavApiException(f"Failed to check invoice: {str(e)}")
 
     def check_invoice_exists(
         self,
@@ -917,39 +772,6 @@ class NavOnlineInvoiceClient:
                 raise
             logger.error(f"Unexpected error in check_invoice_exists: {e}")
             raise NavApiException(f"Failed to check if invoice exists: {str(e)}")
-
-    def query_invoice_chain_digest(
-        self, request: QueryInvoiceChainDigestRequest
-    ) -> List[InvoiceDigestType]:
-        """
-        Query invoice chain digests using the official API request structure.
-
-        Args:
-            request: QueryInvoiceChainDigestRequest with proper API structure
-
-        Returns:
-            List[InvoiceDigestType]: List of invoice chain elements
-
-        Raises:
-            NavValidationException: If request validation fails
-            NavApiException: If API call fails
-        """
-        try:
-            # Build XML request
-            xml_request = self._build_query_invoice_chain_digest_request_xml(request)
-
-            # Make API call
-            with self.http_client as client:
-                xml_response = client.post("/queryInvoiceChainDigest", xml_request)
-
-            # Parse response (reusing the same parser as it's similar structure)
-            return self._parse_invoice_digest_response(xml_response)
-
-        except (NavValidationException, NavApiException):
-            raise
-        except Exception as e:
-            logger.error(f"Unexpected error in query_invoice_chain_digest: {str(e)}")
-            raise NavApiException(f"Unexpected error: {str(e)}")
 
     def get_all_invoice_data_for_date_range(
         self,
