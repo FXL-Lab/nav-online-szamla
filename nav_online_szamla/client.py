@@ -4,6 +4,7 @@ Main NAV Online Számla API client.
 This module provides the main client class for interacting with the NAV Online Számla API.
 """
 
+import gzip
 import logging
 from datetime import datetime
 from typing import List, Optional
@@ -482,25 +483,54 @@ class NavOnlineInvoiceClient:
             if parsed_response.invoice_data_result.invoice_data:
                 try:
                     # The invoice_data field is already decoded from Base64 by xsdata, 
-                    # but it's in bytes format containing XML
+                    # but it's in bytes format containing XML (possibly compressed)
                     xml_bytes = parsed_response.invoice_data_result.invoice_data
                     
-                    # Try UTF-8 first, then fall back to other encodings
-                    try:
-                        xml_content = xml_bytes.decode('utf-8')
-                    except UnicodeDecodeError:
-                        try:
-                            # Try latin-1 which can handle any byte sequence
-                            xml_content = xml_bytes.decode('latin-1')
-                        except UnicodeDecodeError:
-                            # Last resort - decode with error replacement
-                            xml_content = xml_bytes.decode('utf-8', errors='replace')
+                    # Check if it's already a parsed object
+                    if isinstance(xml_bytes, InvoiceData):
+                        logger.info(f"Invoice data is already parsed as InvoiceData object")
+                        return parsed_response
                     
-                    # Parse the decoded XML into InvoiceData object
-                    parsed_invoice_data = self._parse_response_from_xml(xml_content, InvoiceData)
-                    # Replace the bytes with the parsed object
-                    parsed_response.invoice_data_result.invoice_data = parsed_invoice_data
-                    logger.info(f"Successfully parsed invoice data XML for {invoice_number}")
+                    # If it's bytes, check if it's compressed or not
+                    if isinstance(xml_bytes, bytes):
+                        # Check for gzip compression based on response indicator or magic bytes
+                        is_compressed = False
+                        if (hasattr(parsed_response.invoice_data_result, 'compressed_content_indicator') and 
+                            parsed_response.invoice_data_result.compressed_content_indicator):
+                            is_compressed = True
+                            logger.debug("Data marked as compressed in response")
+                        elif xml_bytes.startswith(b'\x1f\x8b'):  # GZIP magic bytes
+                            is_compressed = True
+                            logger.debug("Data appears to be gzipped (magic bytes detected)")
+                        
+                        # Decompress if needed
+                        if is_compressed:
+                            try:
+                                xml_bytes = gzip.decompress(xml_bytes)
+                                logger.debug(f"Successfully decompressed data, new length: {len(xml_bytes)}")
+                            except Exception as decomp_error:
+                                logger.error(f"Failed to decompress data: {decomp_error}")
+                                raise NavXmlParsingException(f"Failed to decompress invoice data: {decomp_error}")
+                        
+                        # Try UTF-8 first, then fall back to other encodings
+                        try:
+                            xml_content = xml_bytes.decode('utf-8')
+                        except UnicodeDecodeError:
+                            try:
+                                # Try latin-1 which can handle any byte sequence
+                                xml_content = xml_bytes.decode('latin-1')
+                            except UnicodeDecodeError:
+                                # Last resort - decode with error replacement
+                                xml_content = xml_bytes.decode('utf-8', errors='replace')
+                        
+                        # Parse the decoded XML into InvoiceData object
+                        parsed_invoice_data = self._parse_response_from_xml(xml_content, InvoiceData)
+                        # Replace the bytes with the parsed object
+                        parsed_response.invoice_data_result.invoice_data = parsed_invoice_data
+                        logger.info(f"Successfully parsed invoice data XML for {invoice_number}")
+                    else:
+                        # If it's not bytes, log what it is and keep it
+                        logger.warning(f"Invoice data is not bytes, it's {type(xml_bytes)}. Keeping as-is.")
                     
                 except Exception as e:
                     logger.warning(f"Failed to parse invoice data XML: {e}")
