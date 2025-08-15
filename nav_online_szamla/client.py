@@ -65,6 +65,11 @@ from .models import (
     ManageAnnulmentOperationType,
     AnnulmentOperationType,
     AnnulmentOperationListType,
+    # Invoice management types
+    ManageInvoiceRequest,
+    ManageInvoiceResponse,
+    InvoiceOperationType,
+    InvoiceOperationListType,
     # Invoice annulment data types
     InvoiceAnnulment,
     InvoiceAnnulmentType,
@@ -86,6 +91,7 @@ from .utils import (
     generate_custom_id,
     calculate_request_signature,
     calculate_complex_request_signature,
+    calculate_electronic_invoice_hash,
     validate_tax_number,
     format_timestamp_for_nav,
     decode_exchange_token,
@@ -829,13 +835,13 @@ class NavOnlineInvoiceClient:
 
     def get_exchange_token(self) -> str:
         """
-        Convenience method to get just the encoded exchange token string.
+        Convenience method to get and decode the exchange token string.
         
         Returns:
-            str: The encoded exchange token
+            str: The decoded exchange token
         """
         response = self.get_token()
-        return response.encoded_exchange_token.decode('utf-8')
+        return decode_exchange_token(response.encoded_exchange_token, self.credentials.exchange_key)
 
     def check_invoice_exists(
         self,
@@ -1070,6 +1076,15 @@ class NavOnlineInvoiceClient:
             # For the actual request, we need the raw XML bytes (xsdata will base64-encode it)
             xml_data = serialize_annulment_data_to_xml(annulment_data)
             
+            # Log the annulment XML data being sent
+            print("\n" + "="*80)
+            print(f"🚫 ANNULMENT XML DATA (Index: {index})")
+            print("="*80)
+            print(xml_data)
+            print("="*80)
+            print(f"📋 Base64 Data Length: {len(base64_data)} characters")
+            print("="*80 + "\n")
+            
             operation = AnnulmentOperationType(
                 index=index,
                 annulment_operation=ManageAnnulmentOperationType.ANNUL,
@@ -1124,6 +1139,14 @@ class NavOnlineInvoiceClient:
         try:
             # Serialize request to XML
             xml_request = self._serialize_request_to_xml(request)
+            
+            # Log the complete annulment request XML being sent to NAV
+            print("\n" + "="*80)
+            print("🚫 TECHNICAL ANNULMENT REQUEST XML SENT TO NAV SERVER")
+            print("="*80)
+            print(xml_request)
+            print("="*80 + "\n")
+            
             logger.debug(f"Serialized ManageAnnulmentRequest XML: {xml_request}")
             
             # Make API call
@@ -1213,6 +1236,307 @@ class NavOnlineInvoiceClient:
                 raise
             logger.error(f"Failed to submit technical annulment: {e}")
             raise NavApiException(f"Technical annulment failed: {e}")
+
+    def create_manage_invoice_request(
+        self,
+        exchange_token: str,
+        invoice_operations: List[Tuple[InvoiceData, ManageInvoiceOperationType, int]],
+        header_timestamp: Optional[str] = None
+    ) -> ManageInvoiceRequest:
+        """
+        Create a manage invoice request with proper structure and complex signature.
+        
+        Args:
+            exchange_token: Decoded exchange token from NAV
+            invoice_operations: List of tuples (invoice_data, operation_type, index)
+            header_timestamp: Optional timestamp for consistent request timing
+            
+        Returns:
+            ManageInvoiceRequest: Properly structured request for NAV API
+            
+        Raises:
+            NavValidationException: If parameters are invalid
+        """
+        from nav_online_szamla.utils import (
+            serialize_invoice_data_to_xml, 
+            encode_invoice_data_to_base64,
+            calculate_complex_request_signature
+        )
+        
+        if not exchange_token:
+            raise NavValidationException("Exchange token is required")
+        if not invoice_operations:
+            raise NavValidationException("At least one invoice operation is required")
+        
+        # Use provided timestamp or generate new one for consistency
+        if header_timestamp is None:
+            header_timestamp = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.%fZ')[:-3] + 'Z'
+        
+        # Create invoice operation list
+        invoice_operation_list = []
+        index_hash_inputs = []  # For complex signature calculation
+        
+        for invoice_data, operation_type, index in invoice_operations:
+            # Serialize and encode invoice data
+            xml_data = serialize_invoice_data_to_xml(invoice_data)
+            
+            # Log the XML data being sent
+            print("\n" + "="*80)
+            print(f"📋 INVOICE XML DATA (Operation: {operation_type.value}, Index: {index})")
+            print("="*80)
+            print(xml_data)
+            print("="*80)
+            
+            base64_data = encode_invoice_data_to_base64(xml_data)
+            
+            # Calculate electronic invoice hash for electronic invoices
+            # According to NAV docs, this is required when completenessIndicator is true
+            electronic_hash = calculate_electronic_invoice_hash(base64_data)
+            electronic_invoice_hash = CryptoType(
+                value=electronic_hash,
+                crypto_type="SHA3-512"
+            )
+            
+            print(f"📋 Electronic Invoice Hash: {electronic_hash}")
+            print(f"📋 Base64 Data Length: {len(base64_data)} characters")
+            print("="*80 + "\n")
+            
+            # Create invoice operation
+            operation = InvoiceOperationType(
+                index=index,
+                invoice_operation=operation_type,
+                invoice_data=base64_data,
+                electronic_invoice_hash=electronic_invoice_hash
+            )
+            invoice_operation_list.append(operation)
+            
+            # Collect data for complex signature calculation
+            index_hash_inputs.append((operation_type.value, base64_data))
+        
+        # Create invoice operations list
+        operations_list = InvoiceOperationListType(
+            compressed_content=False,
+            invoice_operation=invoice_operation_list
+        )
+        
+        # Create basic header first to get request_id and timestamp
+        header = self._create_basic_header()
+        
+        # Create user header with complex signature calculation
+        user_header = self._create_user_header_with_complex_signature(
+            self.credentials,
+            header,
+            index_hash_inputs
+        )
+        
+        # Create complete request
+        request = ManageInvoiceRequest(
+            header=header,
+            user=user_header,
+            software=self._create_software_info(self.credentials),
+            exchange_token=exchange_token,
+            invoice_operations=operations_list
+        )
+        
+        return request
+
+    def manage_invoice(self, request: ManageInvoiceRequest) -> ManageInvoiceResponse:
+        """
+        Submit invoice data using xsdata-generated dataclasses.
+        
+        This operation is used to submit new invoices, modifications, or storno operations.
+        
+        Args:
+            request: ManageInvoiceRequest with proper API structure
+            
+        Returns:
+            ManageInvoiceResponse: Fully parsed response with transaction ID
+            
+        Raises:
+            NavValidationException: If request validation fails
+            NavApiException: If API call fails
+            NavXmlParsingException: If XML parsing fails
+        """
+        if not request:
+            raise NavValidationException("Request is required")
+        
+        try:
+            # Serialize request to XML
+            xml_request = self._serialize_request_to_xml(request)
+            
+            # Log the complete request XML being sent to NAV
+            print("\n" + "="*80)
+            print("🚀 COMPLETE REQUEST XML SENT TO NAV SERVER")
+            print("="*80)
+            print(xml_request)
+            print("="*80 + "\n")
+            
+            # Make API call
+            with self.http_client as client:
+                response = client.post("manageInvoice", xml_request)
+                xml_response = response.text
+                
+            # Log the response for debugging
+            logger.info(f"Received response from manageInvoice API")
+            logger.debug(f"Raw response XML: {xml_response[:1000]}...")
+
+            # Parse response
+            parsed_response = self._parse_response_from_xml(xml_response, ManageInvoiceResponse)
+            
+            return parsed_response
+            
+        except Exception as e:
+            if isinstance(e, (NavValidationException, NavApiException, NavXmlParsingException)):
+                raise
+            logger.error(f"Failed to manage invoice: {e}")
+            raise NavApiException(f"Invoice management failed: {e}")
+
+    def submit_invoice(
+        self,
+        invoice_data: InvoiceData,
+        operation_type: ManageInvoiceOperationType = ManageInvoiceOperationType.CREATE,
+        exchange_key: str = None
+    ) -> ManageInvoiceResponse:
+        """
+        High-level method to submit a single invoice to NAV.
+        
+        This method handles the complete workflow:
+        1. Get exchange token
+        2. Decode exchange token  
+        3. Create invoice request
+        4. Submit invoice
+        
+        Args:
+            invoice_data: InvoiceData object to submit
+            operation_type: Type of operation (CREATE, MODIFY, STORNO)
+            exchange_key: Technical user's exchange key for token decoding
+            
+        Returns:
+            ManageInvoiceResponse: API response with transaction details
+            
+        Raises:
+            NavValidationException: If parameters are invalid
+            NavApiException: If API call fails
+        """
+        if not invoice_data:
+            raise NavValidationException("Invoice data is required")
+        
+        # Use provided exchange key or fall back to credentials
+        if exchange_key is None:
+            if hasattr(self.credentials, 'exchange_key'):
+                exchange_key = self.credentials.exchange_key
+            else:
+                raise NavValidationException("Exchange key is required for invoice submission")
+        
+        try:
+            # Generate consistent timestamp for the entire operation
+            request_timestamp = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.%fZ')[:-3] + 'Z'
+            
+            # Step 1: Get exchange token
+            logger.info("Requesting exchange token for invoice submission")
+            token_response = self.get_token()
+            
+            # Step 2: Decode exchange token
+            logger.info("Decoding exchange token")
+            decoded_token = decode_exchange_token(
+                token_response.encoded_exchange_token, 
+                exchange_key
+            )
+            
+            # Step 3: Create invoice operations
+            invoice_operations = [(invoice_data, operation_type, 1)]
+            
+            # Step 4: Create and submit request
+            logger.info(f"Creating invoice request with operation: {operation_type.value}")
+            request = self.create_manage_invoice_request(
+                exchange_token=decoded_token,
+                invoice_operations=invoice_operations,
+                header_timestamp=request_timestamp
+            )
+            
+            # Submit the request
+            response = self.manage_invoice(request)
+            
+            logger.info(f"Invoice submitted successfully. Transaction ID: {response.transaction_id}")
+            return response
+            
+        except Exception as e:
+            if isinstance(e, (NavValidationException, NavApiException, NavXmlParsingException)):
+                raise
+            logger.error(f"Failed to submit invoice: {e}")
+            raise NavApiException(f"Invoice submission failed: {e}")
+
+    def submit_multiple_invoices(
+        self,
+        invoice_operations: List[Tuple[InvoiceData, ManageInvoiceOperationType]],
+        exchange_key: str = None
+    ) -> ManageInvoiceResponse:
+        """
+        High-level method to submit multiple invoices in a single batch to NAV.
+        
+        Args:
+            invoice_operations: List of tuples (invoice_data, operation_type)
+            exchange_key: Technical user's exchange key for token decoding
+            
+        Returns:
+            ManageInvoiceResponse: API response with transaction details
+            
+        Raises:
+            NavValidationException: If parameters are invalid
+            NavApiException: If API call fails
+        """
+        if not invoice_operations:
+            raise NavValidationException("At least one invoice operation is required")
+        
+        if len(invoice_operations) > 100:
+            raise NavValidationException("Maximum 100 invoice operations allowed per batch")
+        
+        # Use provided exchange key or fall back to credentials
+        if exchange_key is None:
+            if hasattr(self.credentials, 'exchange_key'):
+                exchange_key = self.credentials.exchange_key
+            else:
+                raise NavValidationException("Exchange key is required for invoice submission")
+        
+        try:
+            # Generate consistent timestamp for the entire operation
+            request_timestamp = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.%fZ')[:-3] + 'Z'
+            
+            # Step 1: Get exchange token
+            logger.info("Requesting exchange token for batch invoice submission")
+            token_response = self.get_token()
+            
+            # Step 2: Decode exchange token
+            logger.info("Decoding exchange token")
+            decoded_token = decode_exchange_token(
+                token_response.encoded_exchange_token, 
+                exchange_key
+            )
+            
+            # Step 3: Add index to each operation
+            indexed_operations = []
+            for index, (invoice_data, operation_type) in enumerate(invoice_operations, 1):
+                indexed_operations.append((invoice_data, operation_type, index))
+            
+            # Step 4: Create and submit request
+            logger.info(f"Creating batch invoice request with {len(invoice_operations)} operations")
+            request = self.create_manage_invoice_request(
+                exchange_token=decoded_token,
+                invoice_operations=indexed_operations,
+                header_timestamp=request_timestamp
+            )
+            
+            # Submit the request
+            response = self.manage_invoice(request)
+            
+            logger.info(f"Batch invoice submitted successfully. Transaction ID: {response.transaction_id}")
+            return response
+            
+        except Exception as e:
+            if isinstance(e, (NavValidationException, NavApiException, NavXmlParsingException)):
+                raise
+            logger.error(f"Failed to submit batch invoice: {e}")
+            raise NavApiException(f"Batch invoice submission failed: {e}")
 
     def get_environment_info(self) -> dict:
         """

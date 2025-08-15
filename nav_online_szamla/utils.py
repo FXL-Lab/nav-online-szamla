@@ -138,6 +138,24 @@ def calculate_complex_request_signature(
     return final_hash.hexdigest().upper()
 
 
+def calculate_electronic_invoice_hash(base64_invoice_data: str) -> str:
+    """
+    Calculate SHA3-512 hash of base64 encoded invoice data for electronic invoices.
+    
+    According to NAV documentation, when completenessIndicator is true,
+    the electronic invoice hash should be the SHA3-512 hash of the BASE64
+    encoded invoiceData in uppercase format.
+    
+    Args:
+        base64_invoice_data: Base64 encoded invoice data string
+        
+    Returns:
+        str: SHA3-512 hash in uppercase hexadecimal format
+    """
+    hash_object = hashlib.sha3_512(base64_invoice_data.encode("utf-8"))
+    return hash_object.hexdigest().upper()
+
+
 def validate_tax_number(tax_number: str) -> bool:
     """
     Validate Hungarian tax number format (8 digits).
@@ -378,3 +396,161 @@ def encode_annulment_data_to_base64(annulment_data: 'InvoiceAnnulment') -> str:
         
     except Exception as e:
         raise NavXmlParsingException(f"Failed to encode annulment data to base64: {e}")
+
+
+def serialize_invoice_data_to_xml(invoice_data) -> str:
+    """
+    Serialize InvoiceData object to XML string with proper NAV namespaces.
+    
+    Args:
+        invoice_data: InvoiceData object to serialize
+        
+    Returns:
+        str: XML representation of the invoice data with proper namespaces
+        
+    Raises:
+        NavXmlParsingException: If serialization fails
+    """
+    try:
+        from xsdata.formats.dataclass.context import XmlContext
+        from xsdata.formats.dataclass.serializers import XmlSerializer
+        from xsdata.formats.dataclass.serializers.config import SerializerConfig
+        
+        # Create XML context and serializer
+        context = XmlContext()
+        config = SerializerConfig(
+            indent="  ",
+            xml_declaration=True,
+            encoding="UTF-8"
+        )
+        serializer = XmlSerializer(context=context, config=config)
+        
+        # Serialize the invoice data to XML
+        xml_data = serializer.render(invoice_data)
+        
+        # Fix namespace declarations to match NAV expected format
+        xml_data = _fix_invoice_data_namespaces(xml_data)
+        
+        return xml_data
+        
+    except Exception as e:
+        raise NavXmlParsingException(f"Failed to serialize invoice data to XML: {e}")
+
+
+def _fix_invoice_data_namespaces(xml_string: str) -> str:
+    """
+    Fix namespace declarations in invoice data XML to match NAV expectations.
+    
+    NAV expects:
+    - Root element: InvoiceData with data namespace
+    - Some elements in base namespace: taxpayerId, vatCode, countyCode, simpleAddress, etc.
+    - Most elements in data namespace (default)
+    """
+    # Replace the root element declaration
+    if 'InvoiceDataType' in xml_string:
+        # Replace InvoiceDataType with InvoiceData and add proper namespaces
+        xml_string = xml_string.replace(
+            '<InvoiceDataType',
+            '<InvoiceData xmlns="http://schemas.nav.gov.hu/OSA/3.0/data" xmlns:base="http://schemas.nav.gov.hu/OSA/3.0/base"'
+        )
+        xml_string = xml_string.replace('</InvoiceDataType>', '</InvoiceData>')
+    elif '<InvoiceData xmlns="http://schemas.nav.gov.hu/OSA/3.0/data">' in xml_string:
+        # Add base namespace if only data namespace is present
+        xml_string = xml_string.replace(
+            '<InvoiceData xmlns="http://schemas.nav.gov.hu/OSA/3.0/data">',
+            '<InvoiceData xmlns="http://schemas.nav.gov.hu/OSA/3.0/data" xmlns:base="http://schemas.nav.gov.hu/OSA/3.0/base">'
+        )
+    
+    # Convert namespace prefixes:
+    # ns0 is data namespace (becomes default, no prefix)
+    # ns1 is base namespace (becomes base: prefix)
+    
+    # First, handle base namespace elements (ns1)
+    import re
+    
+    # Fix xsi:type attributes first (these need proper namespace prefixes)
+    xml_string = re.sub(r'xsi:type="ns1:([^"]+)"', r'xsi:type="base:\1"', xml_string)
+    xml_string = re.sub(r'xsi:type="ns0:([^"]+)"', r'xsi:type="\1"', xml_string)
+    
+    # Replace ns1: with base: for opening tags
+    xml_string = re.sub(r'<ns1:([^>\s]+)', r'<base:\1', xml_string)
+    # Replace ns1: with base: for closing tags  
+    xml_string = re.sub(r'</ns1:([^>]+)', r'</base:\1', xml_string)
+    
+    # Remove base namespace declarations since we declared it at root
+    xml_string = re.sub(r' xmlns:ns1="http://schemas\.nav\.gov\.hu/OSA/3\.0/base"', '', xml_string)
+    
+    # Remove data namespace elements (ns0) - they become default namespace
+    xml_string = re.sub(r'<ns0:([^>\s]+)', r'<\1', xml_string)
+    xml_string = re.sub(r'</ns0:([^>]+)', r'</\1', xml_string)
+    
+    # Remove data namespace declarations since we declared it as default at root
+    xml_string = re.sub(r' xmlns:ns0="http://schemas\.nav\.gov\.hu/OSA/3\.0/data"', '', xml_string)
+    
+    # Clean up any remaining numbered namespace prefixes
+    xml_string = re.sub(r'<ns\d+:', '<', xml_string)
+    xml_string = re.sub(r'</ns\d+:', '</', xml_string)
+    xml_string = re.sub(r' xmlns:ns\d+="[^"]*"', '', xml_string)
+    
+    # Fix VAT rate issues: when vatPercentage is present, remove conflicting default fields
+    xml_string = _fix_vat_rate_elements(xml_string)
+    
+    return xml_string
+
+
+def _fix_vat_rate_elements(xml_string: str) -> str:
+    """
+    Fix VAT rate elements that conflict with schema constraints.
+    
+    When vatPercentage is present (normal VAT), remove the default elements
+    that have schema constraints requiring specific values.
+    """
+    import re
+    
+    # Find all vatRate blocks (both <vatRate> and <lineVatRate>) that contain vatPercentage
+    vat_rate_patterns = [
+        r'(<vatRate>.*?</vatRate>)',
+        r'(<lineVatRate>.*?</lineVatRate>)'
+    ]
+    
+    def fix_vat_rate_block(match):
+        vat_rate_content = match.group(1)
+        
+        # If this vatRate block contains vatPercentage, remove the problematic default elements
+        if '<vatPercentage>' in vat_rate_content:
+            # Remove vatDomesticReverseCharge and noVatCharge elements
+            vat_rate_content = re.sub(r'<vatDomesticReverseCharge>.*?</vatDomesticReverseCharge>\s*', '', vat_rate_content)
+            vat_rate_content = re.sub(r'<noVatCharge>.*?</noVatCharge>\s*', '', vat_rate_content)
+        
+        return vat_rate_content
+    
+    # Apply the fix to all vatRate blocks (both types)
+    for pattern in vat_rate_patterns:
+        xml_string = re.sub(pattern, fix_vat_rate_block, xml_string, flags=re.DOTALL)
+    
+    return xml_string
+
+
+def encode_invoice_data_to_base64(xml_data: str) -> str:
+    """
+    Encode XML string to base64 string.
+    
+    Args:
+        xml_data: XML string to encode
+        
+    Returns:
+        str: Base64 encoded data as string
+        
+    Raises:
+        NavXmlParsingException: If encoding fails
+    """
+    try:
+        # Encode to base64
+        xml_bytes = xml_data.encode('utf-8')
+        base64_bytes = base64.b64encode(xml_bytes)
+        base64_string = base64_bytes.decode('ascii')
+        
+        return base64_string
+        
+    except Exception as e:
+        raise NavXmlParsingException(f"Failed to encode invoice data to base64: {e}")
