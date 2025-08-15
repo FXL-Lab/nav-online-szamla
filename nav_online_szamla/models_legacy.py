@@ -18,3 +18,4 @@ class NavCredentials:
     password: str
     signer_key: str
     tax_number: str
+    exchange_key: Optional[str] = None  # 16-character key for AES-128 token decryption

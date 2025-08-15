@@ -36,6 +36,7 @@ openpyxl = "^3.1.0"
 dotenv = "^0.9.9"
 tenacity = "^9.0.0"
 xsdata = {extras = ["cli"], version = "^25.7"}
+cryptography = "^41.0.0"
 
 [tool.poetry.group.test.dependencies]
 pytest = "^8.4.1"

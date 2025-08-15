@@ -7,7 +7,7 @@ This module provides the main client class for interacting with the NAV Online S
 import gzip
 import logging
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from xsdata.formats.dataclass.context import XmlContext
 from xsdata.formats.dataclass.serializers import XmlSerializer
@@ -23,6 +23,9 @@ from .config import (
     SOFTWARE_DEV_NAME,
     SOFTWARE_DEV_CONTACT,
     SOFTWARE_DEV_COUNTRY,
+    NavEnvironment,
+    ENVIRONMENT_URLS,
+    get_default_environment,
 )
 from .models import (
     # Official API types from generated models
@@ -56,6 +59,16 @@ from .models import (
     UserHeaderType,
     SoftwareType,
     SoftwareOperationType,
+    # Annulment types
+    ManageAnnulmentRequest,
+    ManageAnnulmentResponse,
+    ManageAnnulmentOperationType,
+    AnnulmentOperationType,
+    AnnulmentOperationListType,
+    # Invoice annulment data types
+    InvoiceAnnulment,
+    InvoiceAnnulmentType,
+    AnnulmentCodeType,
 )
 
 # Import only essential custom classes
@@ -72,8 +85,12 @@ from .utils import (
     generate_password_hash,
     generate_custom_id,
     calculate_request_signature,
+    calculate_complex_request_signature,
     validate_tax_number,
     format_timestamp_for_nav,
+    decode_exchange_token,
+    encode_annulment_data_to_base64,
+    serialize_annulment_data_to_xml,
 )
 from .http_client import NavHttpClient
 
@@ -86,26 +103,53 @@ class NavOnlineInvoiceClient:
 
     This client provides methods for querying invoice data, getting invoice details,
     and managing invoice operations through the NAV API.
+    
+    Supports both test and production environments for development and deployment.
     """
 
-    def __init__(self, credentials: NavCredentials, base_url: str = ONLINE_SZAMLA_URL, timeout: int = 30):
+    def __init__(
+        self, 
+        credentials: NavCredentials, 
+        environment: Optional[NavEnvironment] = None,
+        timeout: int = 30
+    ):
         """
         Initialize the NAV API client.
 
         Args:
             credentials: NAV API credentials
-            base_url: Base URL for the NAV API  
+            environment: Environment to use (TEST or PRODUCTION). If None, uses environment 
+                        variable NAV_ENVIRONMENT or defaults to PRODUCTION
             timeout: Request timeout in seconds
+            
+        Examples:
+            # Use production environment (default)
+            client = NavOnlineInvoiceClient(credentials)
+            
+            # Use test environment
+            client = NavOnlineInvoiceClient(credentials, environment=NavEnvironment.TEST)
+            
+            # Use environment variable NAV_ENVIRONMENT=test
+            os.environ['NAV_ENVIRONMENT'] = 'test'
+            client = NavOnlineInvoiceClient(credentials)
         """
         self.validate_credentials(credentials)
         self.credentials = credentials
-        self.base_url = base_url
-        self.http_client = NavHttpClient(base_url, timeout)
+        
+        # Use environment-based URL
+        self.environment = environment or get_default_environment()
+        self.base_url = ENVIRONMENT_URLS[self.environment]
+        
+        self.timeout = timeout
+        self.http_client = NavHttpClient(self.base_url, timeout)
         
         # Initialize xsdata XML context, serializer, and parser
         self.xml_context = XmlContext()
         self.xml_serializer = XmlSerializer(context=self.xml_context)
         self.xml_parser = XmlParser(context=self.xml_context)
+        
+        # Log environment information for debugging
+        logger.info(f"Initialized NAV client for {self.environment.value} environment: {self.base_url}")
 
     def validate_credentials(self, credentials: NavCredentials) -> None:
         """
@@ -136,6 +180,15 @@ class NavOnlineInvoiceClient:
             header_version="1.0"
         )
 
+    def _create_basic_header_with_timestamp(self, timestamp: str) -> BasicHeaderType:
+        """Create basic header for requests with a specific timestamp."""
+        return BasicHeaderType(
+            request_id=generate_custom_id(),
+            timestamp=timestamp,
+            request_version="3.0",
+            header_version="1.0"
+        )
+
     def _create_user_header(self, credentials: NavCredentials, header: BasicHeaderType) -> UserHeaderType:
         """Create user header with authentication data using the provided header."""
         password_hash = generate_password_hash(credentials.password)
@@ -143,6 +196,34 @@ class NavOnlineInvoiceClient:
             header.request_id, 
             header.timestamp, 
             credentials.signer_key
+        )
+        
+        return UserHeaderType(
+            login=credentials.login,
+            password_hash=CryptoType(
+                value=password_hash,
+                crypto_type="SHA-512"
+            ),
+            tax_number=credentials.tax_number,
+            request_signature=CryptoType(
+                value=request_signature,
+                crypto_type="SHA3-512"
+            )
+        )
+
+    def _create_user_header_with_complex_signature(
+        self, 
+        credentials: NavCredentials, 
+        header: BasicHeaderType,
+        operation_data: List[Tuple[str, str]]
+    ) -> UserHeaderType:
+        """Create user header with complex signature for manageInvoice/manageAnnulment operations."""
+        password_hash = generate_password_hash(credentials.password)
+        request_signature = calculate_complex_request_signature(
+            header.request_id, 
+            header.timestamp, 
+            credentials.signer_key,
+            operation_data
         )
         
         return UserHeaderType(
@@ -953,6 +1034,213 @@ class NavOnlineInvoiceClient:
             raise NavApiException(
                 f"Unexpected error during comprehensive data retrieval: {str(e)}"
             )
+
+    def create_manage_annulment_request(
+        self,
+        exchange_token: str,
+        annulment_operations: List[Tuple[InvoiceAnnulment, int]],
+        header_timestamp: Optional[str] = None
+    ) -> ManageAnnulmentRequest:
+        """
+        Create a ManageAnnulmentRequest using generated models.
+        
+        Args:
+            exchange_token: Decoded exchange token from /tokenExchange
+            annulment_operations: List of tuples containing (InvoiceAnnulment, index)
+            header_timestamp: Optional pre-generated timestamp to ensure consistency
+            
+        Returns:
+            ManageAnnulmentRequest: Complete request ready for submission
+        """
+        # Create header with consistent timestamp
+        if header_timestamp:
+            header = self._create_basic_header_with_timestamp(header_timestamp)
+        else:
+            header = self._create_basic_header()
+        software = self._create_software_info(self.credentials)
+        
+        # Create annulment operation list and prepare operation data for signature
+        operations = []
+        operation_data = []
+        
+        for annulment_data, index in annulment_operations:
+            # Encode annulment data to base64 for signature calculation
+            base64_data = encode_annulment_data_to_base64(annulment_data)
+            
+            # For the actual request, we need the raw XML bytes (xsdata will base64-encode it)
+            xml_data = serialize_annulment_data_to_xml(annulment_data)
+            
+            operation = AnnulmentOperationType(
+                index=index,
+                annulment_operation=ManageAnnulmentOperationType.ANNUL,
+                invoice_annulment=xml_data.encode('utf-8')  # Raw XML bytes for xsdata
+            )
+            operations.append(operation)
+            
+            # Prepare operation data for complex signature calculation
+            # According to NAV API docs: annulmentOperation + base64 content
+            operation_data.append(("ANNUL", base64_data))
+        
+        # Create user header with complex signature calculation
+        user = self._create_user_header_with_complex_signature(
+            self.credentials, 
+            header, 
+            operation_data
+        )
+        
+        annulment_operation_list = AnnulmentOperationListType(
+            annulment_operation=operations
+        )
+        
+        return ManageAnnulmentRequest(
+            header=header,
+            user=user,
+            software=software,
+            exchange_token=exchange_token,
+            annulment_operations=annulment_operation_list
+        )
+
+    def manage_annulment(
+        self, request: ManageAnnulmentRequest
+    ) -> ManageAnnulmentResponse:
+        """
+        Submit technical annulment request using xsdata-generated dataclasses.
+        
+        This operation is used to technically annul previously submitted invoices.
+        Technical annulment can only be submitted for invoices that have DONE status
+        and contain only warnings (WARN) or no validation messages.
+        
+        Args:
+            request: ManageAnnulmentRequest with proper API structure
+            
+        Returns:
+            ManageAnnulmentResponse: Fully parsed response with transaction ID
+            
+        Raises:
+            NavValidationException: If request validation fails
+            NavApiException: If API call fails
+            NavXmlParsingException: If XML parsing fails
+        """
+        try:
+            # Serialize request to XML
+            xml_request = self._serialize_request_to_xml(request)
+            logger.debug(f"Serialized ManageAnnulmentRequest XML: {xml_request}")
+            
+            # Make API call
+            with self.http_client as client:
+                response = client.post("manageAnnulment", xml_request)
+                xml_response = response.text
+
+            # Parse response using generic parsing function
+            parsed_response = self._parse_response_from_xml(xml_response, ManageAnnulmentResponse)
+            
+            logger.info(f"Successfully submitted technical annulment request. Transaction ID: {parsed_response.transaction_id}")
+            return parsed_response
+
+        except Exception as e:
+            if isinstance(e, (NavApiException, NavValidationException, NavXmlParsingException)):
+                raise
+            logger.error(f"Unexpected error in manage_annulment: {e}")
+            raise NavApiException(f"Failed to submit technical annulment: {str(e)}")
+
+    def submit_technical_annulment(
+        self,
+        invoice_references: List[Tuple[str, AnnulmentCodeType, str]],
+        exchange_key: str
+    ) -> ManageAnnulmentResponse:
+        """
+        High-level method to submit technical annulment for invoices.
+        
+        This method handles the complete workflow:
+        1. Get exchange token
+        2. Decode exchange token
+        3. Create annulment data
+        4. Submit annulment request
+        
+        Args:
+            invoice_references: List of tuples (invoice_number, annulment_code, reason)
+            exchange_key: Technical user's exchange key for token decoding
+            
+        Returns:
+            ManageAnnulmentResponse: API response with transaction details
+            
+        Raises:
+            NavValidationException: If parameters are invalid
+            NavApiException: If API call fails
+        """
+        try:
+            # Generate single timestamp for consistency across request
+            request_timestamp = format_timestamp_for_nav()
+            
+            # Step 1: Get exchange token
+            logger.info("Requesting exchange token for technical annulment")
+            token_response = self.get_token()
+            
+            # Step 2: Decode exchange token
+            logger.info("Decoding exchange token")
+            decoded_token = decode_exchange_token(
+                token_response.encoded_exchange_token, 
+                exchange_key
+            )
+            
+            # Step 3: Create annulment operations using the same timestamp
+            annulment_operations = []
+            for index, (invoice_ref, code, reason) in enumerate(invoice_references, 1):
+                annulment_data = InvoiceAnnulment(
+                    annulment_reference=invoice_ref,
+                    annulment_timestamp=request_timestamp,  # Use consistent timestamp
+                    annulment_code=code,
+                    annulment_reason=reason
+                )
+                annulment_operations.append((annulment_data, index))
+            
+            # Step 4: Create and submit request with consistent timestamp
+            logger.info(f"Creating annulment request for {len(invoice_references)} invoices")
+            request = self.create_manage_annulment_request(
+                exchange_token=decoded_token,
+                annulment_operations=annulment_operations,
+                header_timestamp=request_timestamp  # Use same timestamp for header
+            )
+            
+            # Submit the request
+            response = self.manage_annulment(request)
+            
+            logger.info(f"Technical annulment submitted successfully. Transaction ID: {response.transaction_id}")
+            return response
+            
+        except Exception as e:
+            if isinstance(e, (NavValidationException, NavApiException, NavXmlParsingException)):
+                raise
+            logger.error(f"Failed to submit technical annulment: {e}")
+            raise NavApiException(f"Technical annulment failed: {e}")
+
+    def get_environment_info(self) -> dict:
+        """
+        Get information about the current environment configuration.
+        
+        Returns:
+            dict: Environment information including URLs and settings
+        """
+        info = {
+            "base_url": self.base_url,
+            "timeout": self.timeout,
+            "environment": self.environment.value
+        }
+        
+        info.update({
+            "is_test_environment": self.environment == NavEnvironment.TEST,
+            "is_production_environment": self.environment == NavEnvironment.PRODUCTION
+        })
+        
+        return info
+    
+    def is_test_environment(self) -> bool:
+        """Check if the client is configured for the test environment."""
+        return self.environment == NavEnvironment.TEST
+    
+    def is_production_environment(self) -> bool:
+        """Check if the client is configured for the production environment."""
+        return self.environment == NavEnvironment.PRODUCTION
 
     def close(self):
         """Close the HTTP client."""

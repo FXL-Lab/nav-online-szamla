@@ -5,8 +5,47 @@ This module contains configuration settings, constants, and default values
 used throughout the NAV Online Számla API client.
 """
 
-# API Base URL
-ONLINE_SZAMLA_URL = "https://api.onlineszamla.nav.gov.hu/invoiceService/v3/"
+"""
+Configuration and constants for NAV Online Számla API.
+
+This module contains configuration settings, constants, and default values 
+used throughout the NAV Online Számla API client.
+"""
+
+import os
+from enum import Enum
+from typing import Dict
+
+# Environment Configuration
+class NavEnvironment(Enum):
+    """NAV Online Számla API environments."""
+    PRODUCTION = "production"
+    TEST = "test"
+
+# Environment URLs based on official NAV documentation (Section 6)
+ENVIRONMENT_URLS: Dict[NavEnvironment, str] = {
+    NavEnvironment.PRODUCTION: "https://api.onlineszamla.nav.gov.hu/invoiceService/v3",
+    NavEnvironment.TEST: "https://api-test.onlineszamla.nav.gov.hu/invoiceService/v3"
+}
+
+# Default environment (can be overridden by ENV variable or client parameter)
+DEFAULT_ENVIRONMENT = NavEnvironment.PRODUCTION
+
+# Get environment from environment variable (supports both string and enum values)
+def get_default_environment() -> NavEnvironment:
+    """Get the default environment from environment variable or fallback to production."""
+    env_var = os.getenv('NAV_ENVIRONMENT', DEFAULT_ENVIRONMENT.value).lower()
+    
+    # Support both string values and enum names
+    if env_var in ['test', 'testing', 'development', 'dev']:
+        return NavEnvironment.TEST
+    elif env_var in ['prod', 'production', 'live']:
+        return NavEnvironment.PRODUCTION
+    else:
+        return DEFAULT_ENVIRONMENT
+
+# API Base URL (backward compatibility - will be overridden by environment selection)
+ONLINE_SZAMLA_URL = ENVIRONMENT_URLS[DEFAULT_ENVIRONMENT]
 
 # HTTP Headers
 DEFAULT_HEADERS = {"Content-Type": "application/xml", "Accept": "application/xml"}
