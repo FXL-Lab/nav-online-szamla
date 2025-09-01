@@ -342,6 +342,33 @@ class NavOnlineInvoiceClient:
         
         return xml_string
 
+    def _format_annulment_xml_with_custom_namespaces(self, xml_string: str) -> str:
+        """
+        Convert xsdata generated annulment XML to match NAV expected format.
+        Converts from:
+        <ns0:InvoiceAnnulment xmlns:ns0="http://schemas.nav.gov.hu/OSA/3.0/annul">
+        
+        To:
+        <InvoiceAnnulment xmlns="http://schemas.nav.gov.hu/OSA/3.0/annul">
+        """
+        # Replace namespace declarations - convert ns0 to default namespace
+        xml_string = xml_string.replace(
+            'xmlns:ns0="http://schemas.nav.gov.hu/OSA/3.0/annul"',
+            'xmlns="http://schemas.nav.gov.hu/OSA/3.0/annul"'
+        )
+        
+        # Add standalone="yes" attribute to XML declaration if not present
+        if 'standalone=' not in xml_string:
+            xml_string = xml_string.replace(
+                '<?xml version="1.0" encoding="UTF-8"?>',
+                '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            )
+        
+        # Remove ns0 prefix from all elements (make them use default namespace)
+        xml_string = xml_string.replace('ns0:', '')
+        
+        return xml_string
+
     def create_query_invoice_digest_request(
         self, 
         credentials: NavCredentials, 

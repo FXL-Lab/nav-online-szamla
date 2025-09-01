@@ -13,6 +13,9 @@ from cryptography.hazmat.backends import default_backend
 from datetime import datetime, timedelta, timezone
 from typing import List, Tuple, Optional, TYPE_CHECKING
 import xml.dom.minidom
+from xsdata.formats.dataclass.context import XmlContext
+from xsdata.formats.dataclass.serializers import XmlSerializer
+from xsdata.formats.dataclass.serializers.config import SerializerConfig
 
 if TYPE_CHECKING:
     from .models import InvoiceAnnulment
@@ -336,10 +339,6 @@ def serialize_annulment_data_to_xml(annulment_data: 'InvoiceAnnulment') -> str:
         NavXmlParsingException: If XML serialization fails
     """
     try:
-        from xsdata.formats.dataclass.context import XmlContext
-        from xsdata.formats.dataclass.serializers import XmlSerializer
-        from xsdata.formats.dataclass.serializers.config import SerializerConfig
-        
         # Create XML context and serializer
         context = XmlContext()
         config = SerializerConfig(
@@ -351,6 +350,9 @@ def serialize_annulment_data_to_xml(annulment_data: 'InvoiceAnnulment') -> str:
         
         # Serialize the annulment data to XML
         xml_data = serializer.render(annulment_data)
+        
+        # Format the XML with correct namespaces for NAV API
+        xml_data = _format_annulment_xml_with_custom_namespaces(xml_data)
         
         return xml_data
         
@@ -372,10 +374,6 @@ def encode_annulment_data_to_base64(annulment_data: 'InvoiceAnnulment') -> str:
         NavXmlParsingException: If XML serialization fails
     """
     try:
-        from xsdata.formats.dataclass.context import XmlContext
-        from xsdata.formats.dataclass.serializers import XmlSerializer
-        from xsdata.formats.dataclass.serializers.config import SerializerConfig
-        
         # Create XML context and serializer
         context = XmlContext()
         config = SerializerConfig(
@@ -388,6 +386,9 @@ def encode_annulment_data_to_base64(annulment_data: 'InvoiceAnnulment') -> str:
         # Serialize the annulment data to XML
         xml_data = serializer.render(annulment_data)
         
+        # Format the XML with correct namespaces for NAV API
+        xml_data = _format_annulment_xml_with_custom_namespaces(xml_data)
+        
         # Encode to base64
         xml_bytes = xml_data.encode('utf-8')
         base64_data = base64.b64encode(xml_bytes)
@@ -396,6 +397,34 @@ def encode_annulment_data_to_base64(annulment_data: 'InvoiceAnnulment') -> str:
         
     except Exception as e:
         raise NavXmlParsingException(f"Failed to encode annulment data to base64: {e}")
+
+
+def _format_annulment_xml_with_custom_namespaces(xml_string: str) -> str:
+    """
+    Convert xsdata generated annulment XML to match NAV expected format.
+    Converts from:
+    <ns0:InvoiceAnnulment xmlns:ns0="http://schemas.nav.gov.hu/OSA/3.0/annul">
+    
+    To:
+    <InvoiceAnnulment xmlns="http://schemas.nav.gov.hu/OSA/3.0/annul">
+    """
+    # Replace namespace declarations - convert ns0 to default namespace
+    xml_string = xml_string.replace(
+        'xmlns:ns0="http://schemas.nav.gov.hu/OSA/3.0/annul"',
+        'xmlns="http://schemas.nav.gov.hu/OSA/3.0/annul"'
+    )
+    
+    # Add standalone="yes" attribute to XML declaration if not present
+    if 'standalone=' not in xml_string:
+        xml_string = xml_string.replace(
+            '<?xml version="1.0" encoding="UTF-8"?>',
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        )
+    
+    # Remove ns0 prefix from all elements (make them use default namespace)
+    xml_string = xml_string.replace('ns0:', '')
+    
+    return xml_string
 
 
 def serialize_invoice_data_to_xml(invoice_data) -> str:
