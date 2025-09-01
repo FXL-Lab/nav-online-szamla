@@ -446,7 +446,9 @@ def _fix_invoice_data_namespaces(xml_string: str) -> str:
     - Some elements in base namespace: taxpayerId, vatCode, countyCode, simpleAddress, etc.
     - Most elements in data namespace (default)
     """
-    # Replace the root element declaration
+    import re
+    
+    # First, handle the root element and add proper namespace declarations
     if 'InvoiceDataType' in xml_string:
         # Replace InvoiceDataType with InvoiceData and add proper namespaces
         xml_string = xml_string.replace(
@@ -454,19 +456,26 @@ def _fix_invoice_data_namespaces(xml_string: str) -> str:
             '<InvoiceData xmlns="http://schemas.nav.gov.hu/OSA/3.0/data" xmlns:base="http://schemas.nav.gov.hu/OSA/3.0/base"'
         )
         xml_string = xml_string.replace('</InvoiceDataType>', '</InvoiceData>')
+    elif '<ns0:InvoiceData' in xml_string:
+        # Replace ns0:InvoiceData with InvoiceData and proper namespaces
+        xml_string = re.sub(
+            r'<ns0:InvoiceData([^>]*?)>',
+            '<InvoiceData xmlns="http://schemas.nav.gov.hu/OSA/3.0/data" xmlns:base="http://schemas.nav.gov.hu/OSA/3.0/base">',
+            xml_string
+        )
+        xml_string = xml_string.replace('</ns0:InvoiceData>', '</InvoiceData>')
     elif '<InvoiceData xmlns="http://schemas.nav.gov.hu/OSA/3.0/data">' in xml_string:
         # Add base namespace if only data namespace is present
         xml_string = xml_string.replace(
             '<InvoiceData xmlns="http://schemas.nav.gov.hu/OSA/3.0/data">',
             '<InvoiceData xmlns="http://schemas.nav.gov.hu/OSA/3.0/data" xmlns:base="http://schemas.nav.gov.hu/OSA/3.0/base">'
         )
-    
-    # Convert namespace prefixes:
-    # ns0 is data namespace (becomes default, no prefix)
-    # ns1 is base namespace (becomes base: prefix)
-    
-    # First, handle base namespace elements (ns1)
-    import re
+    elif '<InvoiceData>' in xml_string:
+        # Add both namespaces if missing
+        xml_string = xml_string.replace(
+            '<InvoiceData>',
+            '<InvoiceData xmlns="http://schemas.nav.gov.hu/OSA/3.0/data" xmlns:base="http://schemas.nav.gov.hu/OSA/3.0/base">'
+        )
     
     # Fix xsi:type attributes first (these need proper namespace prefixes)
     xml_string = re.sub(r'xsi:type="ns1:([^"]+)"', r'xsi:type="base:\1"', xml_string)
@@ -488,6 +497,14 @@ def _fix_invoice_data_namespaces(xml_string: str) -> str:
     xml_string = re.sub(r' xmlns:ns0="http://schemas\.nav\.gov\.hu/OSA/3\.0/data"', '', xml_string)
     
     # Clean up any remaining numbered namespace prefixes
+    xml_string = re.sub(r'<ns\d+:', '<', xml_string)
+    xml_string = re.sub(r'</ns\d+:', '</', xml_string)
+    xml_string = re.sub(r' xmlns:ns\d+="[^"]*"', '', xml_string)
+    
+    # Fix VAT rate issues: when vatPercentage is present, remove conflicting default fields
+    xml_string = _fix_vat_rate_elements(xml_string)
+    
+    return xml_string
     xml_string = re.sub(r'<ns\d+:', '<', xml_string)
     xml_string = re.sub(r'</ns\d+:', '</', xml_string)
     xml_string = re.sub(r' xmlns:ns\d+="[^"]*"', '', xml_string)

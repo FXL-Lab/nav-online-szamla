@@ -45,6 +45,7 @@ from .models import (
     QueryInvoiceCheckRequest,
     QueryInvoiceDataRequest,
     QueryInvoiceChainDigestRequest,
+    QueryTransactionStatusRequest,
     # Token exchange
     TokenExchangeRequest,
     TokenExchangeResponse,
@@ -53,6 +54,7 @@ from .models import (
     QueryInvoiceDigestResponse,
     QueryInvoiceCheckResponse,
     QueryInvoiceChainDigestResponse,
+    QueryTransactionStatusResponse,
     # Invoice data types
     InvoiceData,
     # Common types
@@ -453,6 +455,25 @@ class NavOnlineInvoiceClient:
             tax_number=tax_number
         )
 
+    def create_query_transaction_status_request(
+        self,
+        transaction_id: str,
+        return_original_request: Optional[bool] = None
+    ) -> QueryTransactionStatusRequest:
+        """Create a QueryTransactionStatusRequest using generated models."""
+        
+        header = self._create_basic_header()
+        user = self._create_user_header(self.credentials, header)
+        software = self._create_software_info(self.credentials)
+        
+        return QueryTransactionStatusRequest(
+            header=header,
+            user=user,
+            software=software,
+            transaction_id=transaction_id,
+            return_original_request=return_original_request
+        )
+
     def query_invoice_digest(
         self,
         page: int,
@@ -709,6 +730,60 @@ class NavOnlineInvoiceClient:
                 raise
             logger.error(f"Unexpected error in query_invoice_chain_digest: {e}")
             raise NavApiException(f"Failed to query invoice chain digest: {str(e)}")
+
+    def query_transaction_status(
+        self,
+        transaction_id: str,
+        return_original_request: Optional[bool] = None
+    ) -> QueryTransactionStatusResponse:
+        """
+        Query transaction status using xsdata-generated dataclasses.
+        This uses automatic XML serialization and parsing for type-safe API interactions.
+
+        Args:
+            transaction_id: The transaction ID to query status for
+            return_original_request: Whether to return the original request data
+
+        Returns:
+            QueryTransactionStatusResponse: Fully parsed response with processing results
+
+        Raises:
+            NavValidationException: If parameters are invalid
+            NavApiException: If API call fails
+            NavXmlParsingException: If XML parsing fails
+        """
+        if not transaction_id or not transaction_id.strip():
+            raise NavValidationException("Transaction ID is required and cannot be empty")
+
+        if len(transaction_id) > 30:
+            raise NavValidationException("Transaction ID cannot be longer than 30 characters")
+
+        try:
+            # Create request using helper method
+            request = self.create_query_transaction_status_request(
+                transaction_id=transaction_id,
+                return_original_request=return_original_request
+            )
+            
+            # Serialize request to XML
+            xml_request = self._serialize_request_to_xml(request)
+            
+            # Make API call
+            with self.http_client as client:
+                response = client.post("queryTransactionStatus", xml_request)
+                xml_response = response.text
+
+            # Parse response using generic parsing function
+            parsed_response = self._parse_response_from_xml(xml_response, QueryTransactionStatusResponse)
+            
+            logger.info(f"Successfully queried transaction status for: {transaction_id}")
+            return parsed_response
+
+        except Exception as e:
+            if isinstance(e, (NavApiException, NavValidationException, NavXmlParsingException)):
+                raise
+            logger.error(f"Unexpected error in query_transaction_status: {e}")
+            raise NavApiException(f"Failed to query transaction status: {str(e)}")
 
     def get_token(self) -> TokenExchangeResponse:
         """
