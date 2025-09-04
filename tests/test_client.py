@@ -6,6 +6,7 @@ import pytest
 import requests_mock
 
 from nav_online_szamla.client import NavOnlineInvoiceClient
+from nav_online_szamla.config import NavEnvironment
 from nav_online_szamla.models_legacy import NavCredentials
 from nav_online_szamla.models import (
     InvoiceDirectionType,
@@ -40,17 +41,16 @@ class TestNavOnlineInvoiceClient:
         client = NavOnlineInvoiceClient(credentials)
 
         assert (
-            client.base_url == "https://api.onlineszamla.nav.gov.hu/invoiceService/v3/"
+            client.base_url == "https://api.onlineszamla.nav.gov.hu/invoiceService/v3"
         )
         assert client.http_client is not None
 
     def test_client_initialization_custom_url(self):
-        """Test client initialization with custom base URL."""
-        custom_url = "https://test.api.onlineszamla.nav.gov.hu"
+        """Test client initialization with test environment."""
         credentials = self._get_test_credentials()
-        client = NavOnlineInvoiceClient(credentials, base_url=custom_url)
+        client = NavOnlineInvoiceClient(credentials, environment=NavEnvironment.TEST)
 
-        assert client.base_url == custom_url
+        assert client.base_url == "https://api-test.onlineszamla.nav.gov.hu/invoiceService/v3"
 
     def test_client_initialization_custom_timeout(self):
         """Test client initialization with custom timeout."""
@@ -93,7 +93,7 @@ class TestNavOnlineInvoiceClient:
 
         with requests_mock.Mocker() as m:
             m.post(
-                f"{client.base_url}tokenExchange",
+                f"{client.base_url}/tokenExchange",
                 text=xml_response,
                 headers={'Content-Type': 'application/xml'}
             )
@@ -134,7 +134,7 @@ class TestNavOnlineInvoiceClient:
 
         with requests_mock.Mocker() as m:
             m.post(
-                f"{client.base_url}tokenExchange",
+                f"{client.base_url}/tokenExchange",
                 text=xml_error_response,
                 headers={'Content-Type': 'application/xml'}
             )
@@ -149,7 +149,7 @@ class TestNavOnlineInvoiceClient:
         with requests_mock.Mocker() as m:
             # Mock token exchange
             m.post(
-                f"{client.base_url}tokenExchange",
+                f"{client.base_url}/tokenExchange",
                 json={
                     "result": {"funcCode": "OK", "encodedExchangeToken": "token_123"}
                 },
@@ -157,7 +157,7 @@ class TestNavOnlineInvoiceClient:
 
             # Mock query invoice digest
             m.post(
-                f"{client.base_url}queryInvoiceDigest",
+                f"{client.base_url}/queryInvoiceDigest",
                 text="""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
                 <QueryInvoiceDigestResponse xmlns="http://schemas.nav.gov.hu/OSA/3.0/api" 
                                            xmlns:ns2="http://schemas.nav.gov.hu/NTCA/1.0/common" 
@@ -217,7 +217,7 @@ class TestNavOnlineInvoiceClient:
         with requests_mock.Mocker() as m:
             # Mock token exchange
             m.post(
-                f"{client.base_url}tokenExchange",
+                f"{client.base_url}/tokenExchange",
                 json={
                     "result": {"funcCode": "OK", "encodedExchangeToken": "token_123"}
                 },
@@ -225,7 +225,7 @@ class TestNavOnlineInvoiceClient:
 
             # Mock query invoice data
             m.post(
-                f"{client.base_url}queryInvoiceData",
+                f"{client.base_url}/queryInvoiceData",
                 text="""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
                 <QueryInvoiceDataResponse xmlns="http://schemas.nav.gov.hu/OSA/3.0/api" 
                                          xmlns:ns2="http://schemas.nav.gov.hu/NTCA/1.0/common" 
@@ -260,7 +260,7 @@ class TestNavOnlineInvoiceClient:
         with requests_mock.Mocker() as m:
             # Mock token exchange
             m.post(
-                f"{client.base_url}tokenExchange",
+                f"{client.base_url}/tokenExchange",
                 json={
                     "result": {"funcCode": "OK", "encodedExchangeToken": "token_123"}
                 },
@@ -268,7 +268,7 @@ class TestNavOnlineInvoiceClient:
 
             # Mock query invoice check
             m.post(
-                f"{client.base_url}queryInvoiceCheck",
+                f"{client.base_url}/queryInvoiceCheck",
                 text="""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
                 <QueryInvoiceCheckResponse xmlns="http://schemas.nav.gov.hu/OSA/3.0/api" 
                                          xmlns:ns2="http://schemas.nav.gov.hu/NTCA/1.0/common">

@@ -151,7 +151,7 @@ class TestXsdataIntegration:
         with requests_mock.Mocker() as m:
             # Mock the API response
             m.post(
-                f"{client.base_url}queryInvoiceData",
+                f"{client.base_url}/queryInvoiceData",
                 text=self._get_sample_response_xml(),
                 status_code=200
             )
@@ -215,7 +215,7 @@ class TestXsdataIntegration:
 
         with requests_mock.Mocker() as m:
             m.post(
-                f"{client.base_url}queryInvoiceData",
+                f"{client.base_url}/queryInvoiceData",
                 text=no_data_response,
                 status_code=200
             )
@@ -325,7 +325,7 @@ class TestXsdataIntegration:
         with requests_mock.Mocker() as m:
             # Mock the API response
             m.post(
-                f"{client.base_url}queryInvoiceDigest",
+                f"{client.base_url}/queryInvoiceDigest",
                 text=self._get_sample_digest_response_xml(),
                 status_code=200
             )
