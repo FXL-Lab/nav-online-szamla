@@ -422,9 +422,40 @@ class InvoiceExcelImporter:
             if line_rows:
                 # Check if this is a modification invoice to pass proper context
                 is_modification = (operation_type == ManageInvoiceOperationType.MODIFY)
-                lines_type = ExcelFieldMapper.line_rows_to_invoice_lines(line_rows, is_modification=is_modification)
+                lines_type = ExcelFieldMapper.line_rows_to_invoice_lines(
+                    line_rows, 
+                    is_modification=is_modification,
+                    invoice_category=header_row.invoice_category
+                )
                 if invoice_data.invoice_main and invoice_data.invoice_main.invoice:
                     invoice_data.invoice_main.invoice.invoice_lines = lines_type
+                    
+                    # For simplified invoices, update the summary with the correct VAT content from lines
+                    if (header_row.invoice_category and 
+                        ('egyszerűsített' in header_row.invoice_category.lower() or 
+                         'simplified' in header_row.invoice_category.lower()) and
+                        lines_type and lines_type.line and len(lines_type.line) > 0):
+                        
+                        # Get VAT content from the first line (all lines should have the same VAT in simplified invoices)
+                        first_line = lines_type.line[0]
+                        if (hasattr(first_line, 'line_amounts_simplified') and 
+                            first_line.line_amounts_simplified and 
+                            first_line.line_amounts_simplified.line_vat_rate and
+                            hasattr(first_line.line_amounts_simplified.line_vat_rate, 'vat_content')):
+                            
+                            line_vat_content = first_line.line_amounts_simplified.line_vat_rate.vat_content
+                            
+                            # Update the summary with the correct VAT content
+                            if (invoice_data.invoice_main.invoice.invoice_summary and
+                                invoice_data.invoice_main.invoice.invoice_summary.summary_simplified and
+                                len(invoice_data.invoice_main.invoice.invoice_summary.summary_simplified) > 0):
+                                
+                                # Update the VAT rate in the summary
+                                summary = invoice_data.invoice_main.invoice.invoice_summary.summary_simplified[0]
+                                if summary.vat_rate:
+                                    summary.vat_rate.vat_content = line_vat_content
+                                    logger.debug(f"Updated summary VAT content to: {line_vat_content}")
+            
             
             logger.debug(f"Successfully converted invoice data for: {header_row.invoice_number}")
             return invoice_data, operation_type
