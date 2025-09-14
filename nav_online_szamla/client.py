@@ -1668,6 +1668,112 @@ class NavOnlineInvoiceClient:
         """Check if the client is configured for the production environment."""
         return self.environment == NavEnvironment.PRODUCTION
 
+    # Excel Export/Import Convenience Methods
+    def export_invoices_to_excel(
+        self,
+        start_date: datetime,
+        end_date: datetime,
+        output_file: str,
+        invoice_direction: InvoiceDirectionType = InvoiceDirectionType.OUTBOUND
+    ) -> int:
+        """
+        Export invoice data to Excel file for a given date range.
+        
+        This is a convenience method that combines get_all_invoice_data_for_date_range
+        with Excel export functionality.
+        
+        Args:
+            start_date: Start date for the query range
+            end_date: End date for the query range
+            output_file: Path where the Excel file should be saved
+            invoice_direction: Invoice direction to query (default: OUTBOUND)
+            
+        Returns:
+            int: Number of invoices exported
+            
+        Raises:
+            NavValidationException: If parameters are invalid
+            NavApiException: If API requests fail
+            ExcelProcessingException: If Excel export fails
+        """
+        try:
+            # Import Excel functionality
+            from .excel import InvoiceExcelExporter
+            
+            logger.info(f"Starting Excel export for date range: {start_date.date()} to {end_date.date()}")
+            
+            # Get invoice data
+            invoice_data_list = self.get_all_invoice_data_for_date_range(
+                start_date=start_date,
+                end_date=end_date,
+                invoice_direction=invoice_direction
+            )
+            
+            # Export to Excel
+            exporter = InvoiceExcelExporter()
+            exporter.export_to_excel(invoice_data_list, output_file)
+            
+            logger.info(f"Successfully exported {len(invoice_data_list)} invoices to {output_file}")
+            return len(invoice_data_list)
+            
+        except Exception as e:
+            if isinstance(e, (NavValidationException, NavApiException)):
+                raise
+            logger.error(f"Excel export failed: {e}")
+            raise NavApiException(f"Failed to export to Excel: {e}")
+
+    def import_invoices_from_excel(
+        self,
+        excel_file: str,
+        submit_to_nav: bool = False
+    ) -> List[Tuple[InvoiceData, ManageInvoiceOperationType]]:
+        """
+        Import invoice data from Excel file.
+        
+        This is a convenience method that imports Excel data and optionally
+        submits it to NAV using submit_multiple_invoices.
+        
+        Args:
+            excel_file: Path to the Excel file to import
+            submit_to_nav: Whether to automatically submit to NAV after import
+            
+        Returns:
+            List[Tuple[InvoiceData, ManageInvoiceOperationType]]: Imported invoice data
+            
+        Raises:
+            NavApiException: If import or submission fails
+            ExcelProcessingException: If Excel import fails
+            
+        Note:
+            Import functionality is not yet fully implemented.
+        """
+        try:
+            # Import Excel functionality
+            from .excel import InvoiceExcelImporter
+            
+            logger.info(f"Starting Excel import from {excel_file}")
+            
+            # Import from Excel
+            importer = InvoiceExcelImporter()
+            invoice_data_list = importer.import_from_excel(excel_file)
+            
+            logger.info(f"Successfully imported {len(invoice_data_list)} invoices from Excel")
+            
+            # Optionally submit to NAV
+            if submit_to_nav and invoice_data_list:
+                logger.info("Submitting imported invoices to NAV")
+                response = self.submit_multiple_invoices(invoice_data_list)
+                logger.info(f"Submitted to NAV with transaction ID: {response.transaction_id}")
+            
+            return invoice_data_list
+            
+        except NotImplementedError as e:
+            logger.warning(f"Excel import not yet fully implemented: {e}")
+            raise NavApiException(f"Excel import not yet available: {e}")
+        except Exception as e:
+            logger.error(f"Excel import failed: {e}")
+            raise NavApiException(f"Failed to import from Excel: {e}")
+
     def close(self):
         """Close the HTTP client."""
         self.http_client.close()
