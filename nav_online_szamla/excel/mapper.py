@@ -180,6 +180,32 @@ class ExcelFieldMapper:
     }
 
     @classmethod
+    def _format_taxpayer_id(cls, taxpayer_id: Optional[str]) -> Optional[str]:
+        """Format taxpayer ID to integer string required by NAV."""
+        if not taxpayer_id:
+            return None
+        
+        # Remove decimal points from taxpayer ID
+        try:
+            taxpayer_float = float(taxpayer_id)
+            return str(int(taxpayer_float))
+        except (ValueError, TypeError):
+            return taxpayer_id  # Return as-is if not a number
+
+    @classmethod
+    def _format_vat_code(cls, vat_code: Optional[str]) -> Optional[str]:
+        """Format VAT code to integer string required by NAV."""
+        if not vat_code:
+            return None
+        
+        # Remove decimal points from VAT code
+        try:
+            vat_float = float(vat_code)
+            return str(int(vat_float))
+        except (ValueError, TypeError):
+            return vat_code  # Return as-is if not a number
+
+    @classmethod
     def _format_county_code(cls, county_code: Optional[str]) -> Optional[str]:
         """Format county code to 2-digit format required by NAV."""
         if not county_code:
@@ -187,7 +213,8 @@ class ExcelFieldMapper:
         
         # Ensure county code is 2 digits with leading zero if needed
         try:
-            county_int = int(county_code)
+            county_float = float(county_code)
+            county_int = int(county_float)
             return f"{county_int:02d}"
         except (ValueError, TypeError):
             return county_code  # Return as-is if not a number
@@ -203,6 +230,147 @@ class ExcelFieldMapper:
         if vat_percentage > 1:
             return vat_percentage / 100
         return vat_percentage
+
+    @classmethod
+    def _format_postal_code(cls, postal_code: Optional[str]) -> Optional[str]:
+        """Format postal code by removing decimal points if present."""
+        if not postal_code:
+            return None
+        
+        postal_code_str = str(postal_code).strip()
+        if not postal_code_str or postal_code_str.lower() in ['nan', 'n/a']:
+            return None
+            
+        # Remove decimal point and zeros (e.g., "2191.0" -> "2191")
+        if '.' in postal_code_str:
+            postal_code_str = postal_code_str.split('.')[0]
+            
+        return postal_code_str
+
+    @classmethod
+    def _map_hungarian_vat_status(cls, hungarian_description: Optional[str]) -> CustomerVatStatusType:
+        """Map Hungarian VAT status descriptions to CustomerVatStatusType enum values."""
+        if not hungarian_description:
+            return CustomerVatStatusType.PRIVATE_PERSON
+        
+        # Mapping from Hungarian descriptions to enum values
+        vat_status_mapping = {
+            'Belföldi ÁFA alany': CustomerVatStatusType.DOMESTIC,
+            'Egyéb (belföldi nem ÁFA alany, nem természetes személy, külföldi Áfa alany és külföldi nem ÁFA alany, nem természetes személy)': CustomerVatStatusType.OTHER,
+            'Nem ÁFA alany (belföldi vagy külföldi) természetes személy': CustomerVatStatusType.PRIVATE_PERSON,
+        }
+        
+        # Try exact match first
+        if hungarian_description in vat_status_mapping:
+            return vat_status_mapping[hungarian_description]
+        
+        # Try to match by key parts for flexibility
+        description_lower = hungarian_description.lower()
+        if 'belföldi áfa alany' in description_lower:
+            return CustomerVatStatusType.DOMESTIC
+        elif 'egyéb' in description_lower and ('külföldi' in description_lower or 'nem áfa alany' in description_lower):
+            return CustomerVatStatusType.OTHER
+        elif 'nem áfa alany' in description_lower and 'természetes személy' in description_lower:
+            return CustomerVatStatusType.PRIVATE_PERSON
+        
+        # Default fallback
+        logger.warning(f"Unknown Hungarian VAT status description: {hungarian_description}, defaulting to PRIVATE_PERSON")
+        return CustomerVatStatusType.PRIVATE_PERSON
+
+    @classmethod
+    def _map_hungarian_payment_method(cls, hungarian_description: Optional[str]) -> PaymentMethodType:
+        """Map Hungarian payment method descriptions to PaymentMethodType enum values."""
+        if not hungarian_description:
+            return PaymentMethodType.OTHER
+        
+        # Mapping from Hungarian descriptions to enum values
+        payment_method_mapping = {
+            'Készpénz': PaymentMethodType.CASH,
+            'Banki átutalás': PaymentMethodType.TRANSFER,
+            'Bankártya': PaymentMethodType.CARD,
+            'Csekk': PaymentMethodType.VOUCHER,
+            'Utalvány': PaymentMethodType.VOUCHER,
+            'Váltó': PaymentMethodType.VOUCHER,
+        }
+        
+        # Try exact match first
+        if hungarian_description in payment_method_mapping:
+            return payment_method_mapping[hungarian_description]
+        
+        # Try to match by key parts for flexibility
+        description_lower = hungarian_description.lower()
+        if 'készpénz' in description_lower or 'cash' in description_lower:
+            return PaymentMethodType.CASH
+        elif 'átutalás' in description_lower or 'transfer' in description_lower:
+            return PaymentMethodType.TRANSFER
+        elif 'kártya' in description_lower or 'card' in description_lower:
+            return PaymentMethodType.CARD
+        elif any(word in description_lower for word in ['csekk', 'utalvány', 'váltó', 'voucher']):
+            return PaymentMethodType.VOUCHER
+        
+        # Default fallback
+        logger.warning(f"Unknown Hungarian payment method description: {hungarian_description}, defaulting to OTHER")
+        return PaymentMethodType.OTHER
+
+    @classmethod
+    def _map_hungarian_invoice_category(cls, hungarian_description: Optional[str]) -> InvoiceCategoryType:
+        """Map Hungarian invoice category descriptions to InvoiceCategoryType enum values."""
+        if not hungarian_description:
+            return InvoiceCategoryType.NORMAL
+        
+        # Mapping from Hungarian descriptions to enum values
+        category_mapping = {
+            'Normál': InvoiceCategoryType.NORMAL,
+            'Egyszerűsített': InvoiceCategoryType.SIMPLIFIED,
+            'Összesítő': InvoiceCategoryType.AGGREGATE,
+        }
+        
+        # Try exact match first
+        if hungarian_description in category_mapping:
+            return category_mapping[hungarian_description]
+        
+        # Try to match by key parts for flexibility
+        description_lower = hungarian_description.lower()
+        if 'normál' in description_lower or 'normal' in description_lower:
+            return InvoiceCategoryType.NORMAL
+        elif 'egyszerűsített' in description_lower or 'simplified' in description_lower:
+            return InvoiceCategoryType.SIMPLIFIED
+        elif 'összesítő' in description_lower or 'aggregate' in description_lower:
+            return InvoiceCategoryType.AGGREGATE
+        
+        # Default fallback
+        logger.warning(f"Unknown Hungarian invoice category description: {hungarian_description}, defaulting to NORMAL")
+        return InvoiceCategoryType.NORMAL
+
+    @classmethod
+    def _map_hungarian_vat_status(cls, hungarian_description: Optional[str]) -> CustomerVatStatusType:
+        """Map Hungarian VAT status descriptions to CustomerVatStatusType enum values."""
+        if not hungarian_description:
+            return CustomerVatStatusType.PRIVATE_PERSON
+        
+        # Mapping from Hungarian descriptions to enum values
+        vat_status_mapping = {
+            'Belföldi ÁFA alany': CustomerVatStatusType.DOMESTIC,
+            'Egyéb (belföldi nem ÁFA alany, nem természetes személy, külföldi Áfa alany és külföldi nem ÁFA alany, nem természetes személy)': CustomerVatStatusType.OTHER,
+            'Nem ÁFA alany (belföldi vagy külföldi) természetes személy': CustomerVatStatusType.PRIVATE_PERSON,
+        }
+        
+        # Try exact match first
+        if hungarian_description in vat_status_mapping:
+            return vat_status_mapping[hungarian_description]
+        
+        # Try to match by key parts for flexibility
+        description_lower = hungarian_description.lower()
+        if 'belföldi áfa alany' in description_lower:
+            return CustomerVatStatusType.DOMESTIC
+        elif 'egyéb' in description_lower and ('külföldi' in description_lower or 'nem áfa alany' in description_lower):
+            return CustomerVatStatusType.OTHER
+        elif 'nem áfa alany' in description_lower and 'természetes személy' in description_lower:
+            return CustomerVatStatusType.PRIVATE_PERSON
+        
+        # Default fallback
+        logger.warning(f"Unknown Hungarian VAT status description: {hungarian_description}, defaulting to PRIVATE_PERSON")
+        return CustomerVatStatusType.PRIVATE_PERSON
 
     @classmethod
     def _normalize_header_row_values(cls, row: InvoiceHeaderRow) -> None:
@@ -617,8 +785,8 @@ class ExcelFieldMapper:
             supplier_tax_number = None
             if row.seller_tax_number_main:
                 supplier_tax_number = TaxNumberType(
-                    taxpayer_id=row.seller_tax_number_main,
-                    vat_code=row.seller_tax_number_vat,
+                    taxpayer_id=cls._format_taxpayer_id(row.seller_tax_number_main),
+                    vat_code=cls._format_vat_code(row.seller_tax_number_vat),
                     county_code=cls._format_county_code(row.seller_tax_number_county)
                 )
             
@@ -632,50 +800,72 @@ class ExcelFieldMapper:
                 supplier_address=supplier_address
             )
         
-        # Customer info
-        customer_info = None
-        if any([row.buyer_name, row.buyer_tax_number_main, row.buyer_country_code]):
-            # Create customer VAT data if we have tax info or VAT numbers
-            customer_vat_data = None
-            if any([row.buyer_tax_number_main, row.buyer_community_vat_number, row.buyer_third_country_tax_number]):
-                customer_tax_number = None
-                if row.buyer_tax_number_main:
-                    # Need to import CustomerTaxNumberType
-                    from ..models.invoice_data import CustomerTaxNumberType
-                    customer_tax_number = CustomerTaxNumberType(
-                        taxpayer_id=row.buyer_tax_number_main,
-                        vat_code=row.buyer_tax_number_vat,
-                        county_code=cls._format_county_code(row.buyer_tax_number_county)
-                    )
-                
-                from ..models.invoice_data import CustomerVatDataType
-                customer_vat_data = CustomerVatDataType(
-                    customer_tax_number=customer_tax_number,
-                    community_vat_number=row.buyer_community_vat_number,
-                    third_state_tax_id=row.buyer_third_country_tax_number
+        # Customer info - ALWAYS required for CREATE operations per NAV API
+        # Create customer VAT data if we have tax info or VAT numbers
+        customer_vat_data = None
+        if any([row.buyer_tax_number_main, row.buyer_community_vat_number, row.buyer_third_country_tax_number]):
+            customer_tax_number = None
+            if row.buyer_tax_number_main:
+                # Need to import CustomerTaxNumberType
+                from ..models.invoice_data import CustomerTaxNumberType
+                customer_tax_number = CustomerTaxNumberType(
+                    taxpayer_id=cls._format_taxpayer_id(row.buyer_tax_number_main),
+                    vat_code=cls._format_vat_code(row.buyer_tax_number_vat),
+                    county_code=cls._format_county_code(row.buyer_tax_number_county)
                 )
             
-            customer_address = None
+            from ..models.invoice_data import CustomerVatDataType
+            customer_vat_data = CustomerVatDataType(
+                customer_tax_number=customer_tax_number,
+                community_vat_number=row.buyer_community_vat_number,
+                third_state_tax_id=row.buyer_third_country_tax_number
+            )
+
+        # Parse VAT status - determine appropriate status based on available data
+        customer_vat_status = CustomerVatStatusType.PRIVATE_PERSON  # Default to PRIVATE_PERSON as most permissive
+        if row.buyer_vat_status:
+            try:
+                # First try to map Hungarian descriptions
+                customer_vat_status = cls._map_hungarian_vat_status(row.buyer_vat_status)
+            except ValueError:
+                logger.warning(f"Invalid customer VAT status: {row.buyer_vat_status}")
+                customer_vat_status = CustomerVatStatusType.PRIVATE_PERSON
+        elif row.buyer_tax_number_main:
+            # If we have a Hungarian tax number, likely DOMESTIC
+            customer_vat_status = CustomerVatStatusType.DOMESTIC
+        elif row.buyer_community_vat_number:
+            # If we have EU VAT number, OTHER (foreign VAT subject) 
+            customer_vat_status = CustomerVatStatusType.OTHER
+        elif any([row.buyer_name, row.buyer_country_code, row.buyer_postal_code]):
+            # If we have some customer data but no tax info, use PRIVATE_PERSON
+            # This is the safest option for minimal data as NAV is more lenient
+            customer_vat_status = CustomerVatStatusType.PRIVATE_PERSON
+        # else: keep PRIVATE_PERSON as default for missing data
+        
+        # Determine customer name - use available data or provide default
+        customer_name = row.buyer_name
+        if not customer_name or str(customer_name).lower() in ['nan', 'n/a', '']:
+            customer_name = "N/A"  # Minimal required data when buyer name is missing
+        
+        # Customer address - only provide if NOT PRIVATE_PERSON (privacy restrictions)
+        customer_address = None
+        if customer_vat_status != CustomerVatStatusType.PRIVATE_PERSON:
             if any([row.buyer_country_code, row.buyer_postal_code, row.buyer_city]):
                 customer_address = cls._build_address_from_buyer_fields(row)
-            
-            # Parse VAT status
-            # Customer VAT status - NAV schema requires this field
-            customer_vat_status = None
-            if row.buyer_vat_status:
-                try:
-                    customer_vat_status = CustomerVatStatusType(row.buyer_vat_status)
-                except ValueError:
-                    logger.warning(f"Invalid customer VAT status: {row.buyer_vat_status}")
-                    # Default to DOMESTIC if invalid
-                    customer_vat_status = CustomerVatStatusType.DOMESTIC
-            else:
-                # Default to DOMESTIC if not provided
-                customer_vat_status = CustomerVatStatusType.DOMESTIC
+        
+        # For PRIVATE_PERSON: Only provide customerVatStatus, no name or address for privacy
+        # For OTHER/DOMESTIC: Can provide address and VAT data as needed
+        if customer_vat_status == CustomerVatStatusType.PRIVATE_PERSON:
+            # Private person - provide only status, no name or address for privacy protection
+            customer_info = CustomerInfoType(
+                customer_vat_status=customer_vat_status
+            )
+        else:
+            # Business customer - can provide full data including address and VAT info
             customer_info = CustomerInfoType(
                 customer_vat_status=customer_vat_status,
                 customer_vat_data=customer_vat_data,
-                customer_name=row.buyer_name,
+                customer_name=customer_name,
                 customer_address=customer_address
             )
         
@@ -683,15 +873,18 @@ class ExcelFieldMapper:
         payment_method = None
         if row.payment_method:
             try:
-                payment_method = PaymentMethodType(row.payment_method)
+                # First try to map Hungarian descriptions
+                payment_method = cls._map_hungarian_payment_method(row.payment_method)
             except ValueError:
                 logger.warning(f"Invalid payment method: {row.payment_method}")
+                payment_method = PaymentMethodType.OTHER
         
         # Parse invoice category - NAV schema requires this field early in structure
         invoice_category = None
         if row.invoice_category:
             try:
-                invoice_category = InvoiceCategoryType(row.invoice_category)
+                # First try to map Hungarian descriptions
+                invoice_category = cls._map_hungarian_invoice_category(row.invoice_category)
             except ValueError:
                 logger.warning(f"Invalid invoice category: {row.invoice_category}")
                 invoice_category = InvoiceCategoryType.NORMAL
@@ -703,7 +896,8 @@ class ExcelFieldMapper:
         payment_method_enum = None
         if row.payment_method:
             try:
-                payment_method_enum = PaymentMethodType(row.payment_method)
+                # First try to map Hungarian descriptions
+                payment_method_enum = cls._map_hungarian_payment_method(row.payment_method)
             except ValueError:
                 payment_method_enum = PaymentMethodType.OTHER
                 
@@ -739,8 +933,13 @@ class ExcelFieldMapper:
             vat_rate_vat_amount_huf=row.vat_amount_huf
         )
         
-        # Use the most common VAT rate (0.27 for 27% in Hungary) or 0% if no VAT
-        vat_rate = VatRateType(vat_percentage=Decimal("0.27") if row.vat_amount_original and row.vat_amount_original > 0 else Decimal("0.0"))
+        # Use the most common VAT rate (0.27 for 27% in Hungary) or handle 0% VAT cases
+        if row.vat_amount_original and row.vat_amount_original > 0:
+            vat_rate = VatRateType(vat_percentage=Decimal("0.27"))
+        else:
+            # For 0% VAT, check if this could be a no-charge case (EU transactions, etc.)
+            # For now, use 0% VAT rate - this should be enhanced with line-level aggregation
+            vat_rate = VatRateType(vat_percentage=Decimal("0.0"))
         
         summary_by_vat_rate = SummaryByVatRateType(
             vat_rate=vat_rate,
@@ -784,11 +983,17 @@ class ExcelFieldMapper:
         
         # Parse unit of measure
         unit_of_measure = None
+        unit_of_measure_own = None
         if row.unit_of_measure:
             try:
                 unit_of_measure = UnitOfMeasureType(row.unit_of_measure)
+                # If using OWN unit of measure, we need to provide a custom description
+                if unit_of_measure == UnitOfMeasureType.OWN:
+                    unit_of_measure_own = "darab"  # Default Hungarian unit, or use description from Excel
             except ValueError:
                 logger.warning(f"Invalid unit of measure: {row.unit_of_measure}")
+                # Fallback to PIECE if invalid
+                unit_of_measure = UnitOfMeasureType.PIECE
         
         # Build line amounts
         line_amounts_normal = None
@@ -805,7 +1010,12 @@ class ExcelFieldMapper:
             line_vat_rate = None
             line_vat_data = None
             
-            if row.vat_rate is not None:
+            # Handle VAT rate according to Hungarian VAT law
+            if row.no_vat_charge_indicator and row.no_vat_charge_indicator is True:
+                # No VAT charged under Section 17 of VAT law (EU transactions)
+                line_vat_rate = VatRateType(no_vat_charge=True)
+            elif row.vat_rate is not None:
+                # Standard VAT percentage
                 normalized_vat_rate = cls._normalize_vat_percentage(row.vat_rate)
                 line_vat_rate = VatRateType(vat_percentage=normalized_vat_rate)
                 
@@ -845,6 +1055,7 @@ class ExcelFieldMapper:
             line_description=row.description,
             quantity=row.quantity,
             unit_of_measure=unit_of_measure,
+            unit_of_measure_own=unit_of_measure_own,  # Required when unit_of_measure = OWN
             unit_price=row.unit_price,
             line_amounts_normal=line_amounts_normal
         )
@@ -858,7 +1069,7 @@ class ExcelFieldMapper:
         # Use simple address for basic data
         simple_address = SimpleAddressType(
             country_code=row.seller_country_code,
-            postal_code=row.seller_postal_code or "0000",
+            postal_code=cls._format_postal_code(row.seller_postal_code) or "0000",
             city=row.seller_city,
             additional_address_detail=row.seller_address_detail
         )
@@ -874,7 +1085,7 @@ class ExcelFieldMapper:
         # Use simple address for basic data
         simple_address = SimpleAddressType(
             country_code=row.buyer_country_code,
-            postal_code=row.buyer_postal_code or "0000",
+            postal_code=cls._format_postal_code(row.buyer_postal_code) or "0000",
             city=row.buyer_city,
             additional_address_detail=row.buyer_address_detail
         )
