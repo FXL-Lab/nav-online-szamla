@@ -1031,12 +1031,33 @@ class ExcelFieldMapper:
                 except AttributeError:
                     # If we can't delete it, try setting it to None
                     line_vat_rate.vat_domestic_reverse_charge = None
+            elif row.out_of_scope_case and row.out_of_scope_case.strip().upper() == 'ATK':
+                # Outside VAT scope (Áfa tárgyi hatályán kívül) - only VAT rate, no VAT amount
+                from ..models.invoice_data import DetailedReasonType
+                out_of_scope_reason = DetailedReasonType(
+                    case=row.out_of_scope_case.strip(),  # "ATK"
+                    reason=row.out_of_scope_reason or "Áfa tárgyi hatályán kívül"  # #TODO: Default reason
+                )
+                # Create VatRateType with only the out-of-scope field, avoid default boolean fields
+                line_vat_rate = VatRateType(
+                    vat_percentage=None,
+                    vat_content=None,
+                    vat_exemption=None,
+                    vat_out_of_scope=out_of_scope_reason,
+                    margin_scheme_indicator=None,
+                    vat_amount_mismatch=None
+                )
+                # Manually override the init=False fields to prevent them from being serialized
+                object.__setattr__(line_vat_rate, 'vat_domestic_reverse_charge', None)
+                object.__setattr__(line_vat_rate, 'no_vat_charge', None)
             elif row.vat_rate is not None:
                 # Standard VAT percentage
                 normalized_vat_rate = cls._normalize_vat_percentage(row.vat_rate)
                 line_vat_rate = VatRateType(vat_percentage=normalized_vat_rate)
                 
-            if row.vat_amount_original is not None or row.vat_amount_huf is not None:
+            # Only include VAT amount data if NOT out of VAT scope
+            if (row.vat_amount_original is not None or row.vat_amount_huf is not None) and \
+               not (row.out_of_scope_case and row.out_of_scope_case.strip().upper() == 'ATK'):
                 line_vat_data = LineVatDataType(
                     line_vat_amount=row.vat_amount_original,
                     line_vat_amount_huf=row.vat_amount_huf
