@@ -14,15 +14,16 @@ from ..models import InvoiceData, ManageInvoiceOperationType
 from ..models.invoice_data import (
     InvoiceType, InvoiceHeadType, SupplierInfoType, CustomerInfoType,
     LineType, VatRateType, LineVatDataType, LinesType,
-    SummaryType, SummaryNormalType, InvoiceReferenceType, InvoiceMainType,
+    SummaryType, SummaryNormalType, SummaryByVatRateType, InvoiceReferenceType, InvoiceMainType,
     LineNetAmountDataType, LineGrossAmountDataType,
     LineAmountsNormalType, LineOperationType,
     CustomerVatStatusType, UnitOfMeasureType,
-    InvoiceDetailType, LineModificationReferenceType
+    InvoiceDetailType, LineModificationReferenceType,
+    VatRateNetDataType, VatRateVatDataType
 )
 from ..models.invoice_base import (
     TaxNumberType, AddressType, DetailedAddressType, SimpleAddressType,
-    PaymentMethodType, InvoiceCategoryType
+    PaymentMethodType, InvoiceCategoryType, InvoiceAppearanceType
 )
 from .models import InvoiceHeaderRow, InvoiceLineRow
 from .exceptions import ExcelMappingException
@@ -177,6 +178,31 @@ class ExcelFieldMapper:
         'Tétel teljesítés dátuma': 'line_fulfillment_date',
         'Nincs felszámított áfa az áfa törvény 17. § alapján': 'no_vat_charge_indicator',
     }
+
+    @classmethod
+    def _format_county_code(cls, county_code: Optional[str]) -> Optional[str]:
+        """Format county code to 2-digit format required by NAV."""
+        if not county_code:
+            return None
+        
+        # Ensure county code is 2 digits with leading zero if needed
+        try:
+            county_int = int(county_code)
+            return f"{county_int:02d}"
+        except (ValueError, TypeError):
+            return county_code  # Return as-is if not a number
+
+    @classmethod
+    def _normalize_vat_percentage(cls, vat_percentage: Optional[Decimal]) -> Decimal:
+        """Normalize VAT percentage to 0.0-1.0 range required by NAV."""
+        if vat_percentage is None:
+            return Decimal("0.0")
+        
+        # If percentage is > 1.0, assume it's in percentage format (e.g., 27.0 for 27%)
+        # and convert to decimal format (e.g., 0.27)
+        if vat_percentage > 1:
+            return vat_percentage / 100
+        return vat_percentage
 
     @classmethod
     def _normalize_header_row_values(cls, row: InvoiceHeaderRow) -> None:
@@ -576,7 +602,7 @@ class ExcelFieldMapper:
                 if line:
                     lines.append(line)
             
-            return LinesType(line=lines) if lines else None
+            return LinesType(merged_item_indicator=False, line=lines) if lines else None
             
         except Exception as e:
             logger.error(f"Failed to convert line rows to LinesType: {e}")
@@ -593,7 +619,7 @@ class ExcelFieldMapper:
                 supplier_tax_number = TaxNumberType(
                     taxpayer_id=row.seller_tax_number_main,
                     vat_code=row.seller_tax_number_vat,
-                    county_code=row.seller_tax_number_county
+                    county_code=cls._format_county_code(row.seller_tax_number_county)
                 )
             
             supplier_address = None
@@ -619,7 +645,7 @@ class ExcelFieldMapper:
                     customer_tax_number = CustomerTaxNumberType(
                         taxpayer_id=row.buyer_tax_number_main,
                         vat_code=row.buyer_tax_number_vat,
-                        county_code=row.buyer_tax_number_county
+                        county_code=cls._format_county_code(row.buyer_tax_number_county)
                     )
                 
                 from ..models.invoice_data import CustomerVatDataType
@@ -634,13 +660,18 @@ class ExcelFieldMapper:
                 customer_address = cls._build_address_from_buyer_fields(row)
             
             # Parse VAT status
+            # Customer VAT status - NAV schema requires this field
             customer_vat_status = None
             if row.buyer_vat_status:
                 try:
                     customer_vat_status = CustomerVatStatusType(row.buyer_vat_status)
                 except ValueError:
                     logger.warning(f"Invalid customer VAT status: {row.buyer_vat_status}")
-            
+                    # Default to DOMESTIC if invalid
+                    customer_vat_status = CustomerVatStatusType.DOMESTIC
+            else:
+                # Default to DOMESTIC if not provided
+                customer_vat_status = CustomerVatStatusType.DOMESTIC
             customer_info = CustomerInfoType(
                 customer_vat_status=customer_vat_status,
                 customer_vat_data=customer_vat_data,
@@ -656,13 +687,17 @@ class ExcelFieldMapper:
             except ValueError:
                 logger.warning(f"Invalid payment method: {row.payment_method}")
         
-        # Parse invoice category
+        # Parse invoice category - NAV schema requires this field early in structure
         invoice_category = None
         if row.invoice_category:
             try:
                 invoice_category = InvoiceCategoryType(row.invoice_category)
             except ValueError:
                 logger.warning(f"Invalid invoice category: {row.invoice_category}")
+                invoice_category = InvoiceCategoryType.NORMAL
+        else:
+            # Default to NORMAL if not provided  
+            invoice_category = InvoiceCategoryType.NORMAL
         
         # Create invoice detail with proper fields
         payment_method_enum = None
@@ -673,6 +708,7 @@ class ExcelFieldMapper:
                 payment_method_enum = PaymentMethodType.OTHER
                 
         invoice_detail = InvoiceDetailType(
+            invoice_category=invoice_category,
             invoice_delivery_date=cls._format_date(row.fulfillment_date),
             payment_date=cls._format_date(row.payment_due_date),
             payment_method=payment_method_enum,
@@ -680,7 +716,7 @@ class ExcelFieldMapper:
             exchange_rate=row.exchange_rate or Decimal("1.0"),
             small_business_indicator=row.small_business_indicator or False,
             cash_accounting_indicator=row.cash_accounting_indicator or False,
-            invoice_category=invoice_category
+            invoice_appearance=InvoiceAppearanceType.ELECTRONIC  # Required field: indicates electronic invoice
         )
         
         return InvoiceHeadType(
@@ -692,12 +728,32 @@ class ExcelFieldMapper:
     @classmethod
     def _build_invoice_summary_from_row(cls, row: InvoiceHeaderRow) -> SummaryType:
         """Build SummaryType from header row data."""
+        # Create basic VAT rate summary - this is required
+        vat_rate_net_data = VatRateNetDataType(
+            vat_rate_net_amount=row.net_amount_original,
+            vat_rate_net_amount_huf=row.net_amount_huf
+        )
+        
+        vat_rate_vat_data = VatRateVatDataType(
+            vat_rate_vat_amount=row.vat_amount_original,
+            vat_rate_vat_amount_huf=row.vat_amount_huf
+        )
+        
+        # Use the most common VAT rate (0.27 for 27% in Hungary) or 0% if no VAT
+        vat_rate = VatRateType(vat_percentage=Decimal("0.27") if row.vat_amount_original and row.vat_amount_original > 0 else Decimal("0.0"))
+        
+        summary_by_vat_rate = SummaryByVatRateType(
+            vat_rate=vat_rate,
+            vat_rate_net_data=vat_rate_net_data,
+            vat_rate_vat_data=vat_rate_vat_data
+        )
+        
         summary_normal = SummaryNormalType(
+            summary_by_vat_rate=[summary_by_vat_rate],  # Required field, must come first
             invoice_net_amount=row.net_amount_original,
             invoice_net_amount_huf=row.net_amount_huf,
             invoice_vat_amount=row.vat_amount_original,
-            invoice_vat_amount_huf=row.vat_amount_huf,
-            summary_by_vat_rate=[]
+            invoice_vat_amount_huf=row.vat_amount_huf
         )
         return SummaryType(
             summary_normal=summary_normal
@@ -750,7 +806,8 @@ class ExcelFieldMapper:
             line_vat_data = None
             
             if row.vat_rate is not None:
-                line_vat_rate = VatRateType(vat_percentage=row.vat_rate)
+                normalized_vat_rate = cls._normalize_vat_percentage(row.vat_rate)
+                line_vat_rate = VatRateType(vat_percentage=normalized_vat_rate)
                 
             if row.vat_amount_original is not None or row.vat_amount_huf is not None:
                 line_vat_data = LineVatDataType(
@@ -784,6 +841,7 @@ class ExcelFieldMapper:
         return LineType(
             line_number=row.line_number or 1,
             line_modification_reference=line_modification_reference,
+            line_expression_indicator=False,  # Required field: indicates if line has quantity expression
             line_description=row.description,
             quantity=row.quantity,
             unit_of_measure=unit_of_measure,
