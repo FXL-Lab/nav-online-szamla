@@ -740,8 +740,12 @@ class ExcelFieldMapper:
             invoice_main = InvoiceMainType(invoice=invoice)
             invoice_data.invoice_main = invoice_main
             
-            # Default operation type (can be overridden)
-            operation_type = ManageInvoiceOperationType.CREATE
+            # Determine operation type based on modification fields
+            # If original_invoice_number is present, this is a modification invoice
+            if row.original_invoice_number and row.original_invoice_number.strip():
+                operation_type = ManageInvoiceOperationType.MODIFY
+            else:
+                operation_type = ManageInvoiceOperationType.CREATE
             
             return invoice_data, operation_type
             
@@ -750,7 +754,7 @@ class ExcelFieldMapper:
             raise ExcelMappingException(f"Header conversion failed: {e}")
 
     @classmethod
-    def line_rows_to_invoice_lines(cls, rows: List[InvoiceLineRow]) -> LinesType:
+    def line_rows_to_invoice_lines(cls, rows: List[InvoiceLineRow], is_modification: bool = False) -> LinesType:
         """
         Convert InvoiceLineRow objects to LinesType structure (for import).
         
@@ -758,6 +762,7 @@ class ExcelFieldMapper:
         
         Args:
             rows: List of InvoiceLineRow objects
+            is_modification: Whether this is a modification invoice (MODIFY operation)
             
         Returns:
             LinesType: Reconstructed lines structure
@@ -766,7 +771,7 @@ class ExcelFieldMapper:
             lines = []
             
             for row in rows:
-                line = cls._build_line_from_row(row)
+                line = cls._build_line_from_row(row, is_modification=is_modification)
                 if line:
                     lines.append(line)
             
@@ -968,7 +973,7 @@ class ExcelFieldMapper:
         )
 
     @classmethod
-    def _build_line_from_row(cls, row: InvoiceLineRow) -> LineType:
+    def _build_line_from_row(cls, row: InvoiceLineRow, is_modification: bool = False) -> LineType:
         """Build LineType from line row data."""
         # Parse line operation type
         line_operation = None
@@ -979,7 +984,12 @@ class ExcelFieldMapper:
                 logger.warning(f"Invalid line operation: {row.line_modification_type}")
                 line_operation = LineOperationType.CREATE
         else:
-            line_operation = LineOperationType.CREATE
+            # For modification invoices, default to MODIFY if no specific type is given
+            # For regular invoices, default to CREATE
+            if is_modification:
+                line_operation = LineOperationType.MODIFY  # #TODO: Hardcoded for modification invoices
+            else:
+                line_operation = LineOperationType.CREATE
         
         # Parse unit of measure
         unit_of_measure = None
@@ -1013,7 +1023,14 @@ class ExcelFieldMapper:
             # Handle VAT rate according to Hungarian VAT law
             if row.no_vat_charge_indicator and row.no_vat_charge_indicator is True:
                 # No VAT charged under Section 17 of VAT law (EU transactions)
-                line_vat_rate = VatRateType(no_vat_charge=True)
+                line_vat_rate = VatRateType()
+                line_vat_rate.no_vat_charge = True
+                # Try to unset the default vat_domestic_reverse_charge to prevent XML serialization
+                try:
+                    delattr(line_vat_rate, 'vat_domestic_reverse_charge')
+                except AttributeError:
+                    # If we can't delete it, try setting it to None
+                    line_vat_rate.vat_domestic_reverse_charge = None
             elif row.vat_rate is not None:
                 # Standard VAT percentage
                 normalized_vat_rate = cls._normalize_vat_percentage(row.vat_rate)
@@ -1042,7 +1059,16 @@ class ExcelFieldMapper:
         
         # Build line modification reference if needed
         line_modification_reference = None
-        if line_operation and line_operation != LineOperationType.CREATE:
+        if is_modification:
+            # For modification invoices, always create modification reference - NAV requirement
+            # Use modified_line_number (from "Módosítással érintett tétel sorszáma") as the reference
+            reference_line_number = row.modified_line_number if row.modified_line_number else (row.line_number or 1)  # #TODO: Fallback to current line number
+            line_modification_reference = LineModificationReferenceType(
+                line_number_reference=reference_line_number,
+                line_operation=line_operation or LineOperationType.MODIFY  # #TODO: Hardcoded modification type
+            )
+        elif line_operation and line_operation != LineOperationType.CREATE:
+            # For non-modification invoices, only create if explicitly set
             line_modification_reference = LineModificationReferenceType(
                 line_number_reference=row.line_number or 1,
                 line_operation=line_operation

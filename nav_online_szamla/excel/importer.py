@@ -420,7 +420,9 @@ class InvoiceExcelImporter:
             
             # Convert line data if present
             if line_rows:
-                lines_type = ExcelFieldMapper.line_rows_to_invoice_lines(line_rows)
+                # Check if this is a modification invoice to pass proper context
+                is_modification = (operation_type == ManageInvoiceOperationType.MODIFY)
+                lines_type = ExcelFieldMapper.line_rows_to_invoice_lines(line_rows, is_modification=is_modification)
                 if invoice_data.invoice_main and invoice_data.invoice_main.invoice:
                     invoice_data.invoice_main.invoice.invoice_lines = lines_type
             
