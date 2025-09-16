@@ -1774,6 +1774,249 @@ class NavOnlineInvoiceClient:
             logger.error(f"Excel import failed: {e}")
             raise NavApiException(f"Failed to import from Excel: {e}")
 
+    def process_excel_to_nav_results(
+        self,
+        input_excel_file: str,
+        output_excel_file: str,
+        wait_time: int = 3,
+        max_retries: int = 3,
+        max_invoices_per_batch: int = 10
+    ) -> str:
+        """
+        Process Excel file by submitting invoices to NAV and return results in Excel.
+        
+        Reads an Excel file with invoice data, submits invoices to NAV in batches,
+        queries transaction status for all batches, and exports results to a new Excel file.
+        
+        Args:
+            input_excel_file: Path to input Excel file with 'Fejléc adatok' and 'Tétel adatok' sheets
+            output_excel_file: Path to output Excel file with results
+            wait_time: Time to wait before checking transaction status (seconds)
+            max_retries: Maximum retries for transaction status check
+            max_invoices_per_batch: Maximum number of invoices per batch (default: 10, max: 100)
+            
+        Returns:
+            str: Path to the output Excel file with results
+            
+        Raises:
+            NavValidationException: If parameters are invalid
+            NavApiException: If NAV operations fail
+            ExcelProcessingException: If Excel processing fails
+        """
+        if not input_excel_file or not output_excel_file:
+            raise NavValidationException("Both input and output Excel file paths are required")
+            
+        # Validate batch size
+        if max_invoices_per_batch < 1:
+            raise NavValidationException("max_invoices_per_batch must be at least 1")
+        if max_invoices_per_batch > 100:
+            raise NavValidationException("max_invoices_per_batch cannot exceed 100 (NAV API limit)")
+            
+        try:
+            import pandas as pd
+            from .excel import InvoiceExcelImporter
+            
+            logger.info(f"Starting Excel to NAV processing: {input_excel_file} -> {output_excel_file}")
+            
+            # Step 1: Import invoice data from Excel
+            logger.info("Step 1: Importing invoice data from Excel")
+            importer = InvoiceExcelImporter()
+            invoice_data_list = importer.import_from_excel(input_excel_file)
+            
+            if not invoice_data_list:
+                raise NavValidationException("No invoice data found in Excel file")
+                
+            logger.info(f"Successfully imported {len(invoice_data_list)} invoices from Excel")
+            
+            # Step 2: Process invoices in batches
+            logger.info("Step 2: Processing invoices in batches")
+            
+            # Split invoices into batches
+            total_invoices = len(invoice_data_list)
+            batches = []
+            for i in range(0, total_invoices, max_invoices_per_batch):
+                batch = invoice_data_list[i:i + max_invoices_per_batch]
+                batches.append(batch)
+            
+            batch_results = []  # Store results from all batches
+            
+            logger.info(f"Processing {total_invoices} invoices in {len(batches)} batches (max {max_invoices_per_batch} per batch)")
+            
+            for batch_num, batch in enumerate(batches, 1):
+                start_invoice = (batch_num - 1) * max_invoices_per_batch + 1
+                end_invoice = min(batch_num * max_invoices_per_batch, total_invoices)
+                logger.info(f"Processing batch {batch_num}/{len(batches)}: invoices {start_invoice}-{end_invoice}")
+                
+                try:
+                    # Submit current batch
+                    batch_response = self.submit_multiple_invoices(batch)
+                    batch_transaction_id = batch_response.transaction_id
+                    logger.info(f"Batch {batch_num} submitted successfully. Transaction ID: {batch_transaction_id}")
+                    
+                    # Store batch info for later status checking
+                    batch_results.append({
+                        'batch_num': batch_num,
+                        'transaction_id': batch_transaction_id,
+                        'invoice_data': batch,
+                        'start_index': start_invoice,
+                        'end_index': end_invoice
+                    })
+                    
+                except Exception as e:
+                    logger.error(f"Failed to submit batch {batch_num}: {e}")
+                    # Store failed batch info
+                    batch_results.append({
+                        'batch_num': batch_num,
+                        'transaction_id': None,
+                        'invoice_data': batch,
+                        'start_index': start_invoice,
+                        'end_index': end_invoice,
+                        'error': str(e)
+                    })
+            
+            # Step 3: Wait and query transaction status for all batches
+            logger.info(f"Step 3: Checking transaction status for {len(batch_results)} batches (waiting {wait_time} seconds)")
+            import time
+            time.sleep(wait_time)
+            
+            # Query status for each batch
+            all_results_data = []
+            
+            for batch_info in batch_results:
+                if batch_info.get('error'):
+                    # Handle failed batch submission
+                    logger.warning(f"Batch {batch_info['batch_num']} failed during submission: {batch_info['error']}")
+                    for i, (invoice_data, _) in enumerate(batch_info['invoice_data']):
+                        invoice_number = ""
+                        if hasattr(invoice_data, 'invoice_number') and invoice_data.invoice_number:
+                            invoice_number = invoice_data.invoice_number
+                            
+                        result_row = {
+                            'Számlaszám': invoice_number,
+                            'Tranzakció azonosító': "FAILED",
+                            'Index': batch_info['start_index'] + i,
+                            'Status': "ERROR",
+                            'Warnings': f"Batch submission failed: {batch_info['error']}"
+                        }
+                        all_results_data.append(result_row)
+                    continue
+                
+                batch_transaction_id = batch_info['transaction_id']
+                logger.info(f"Checking status for batch {batch_info['batch_num']}, transaction: {batch_transaction_id}")
+                
+                transaction_response = None
+                for attempt in range(max_retries):
+                    try:
+                        transaction_response = self.query_transaction_status(
+                            transaction_id=batch_transaction_id,
+                            return_original_request=False
+                        )
+                        break
+                    except Exception as e:
+                        if attempt == max_retries - 1:
+                            logger.error(f"Failed to get status for batch {batch_info['batch_num']} after {max_retries} attempts: {e}")
+                        else:
+                            logger.warning(f"Batch {batch_info['batch_num']} status check attempt {attempt + 1} failed: {e}")
+                            time.sleep(2)
+                
+                if not transaction_response:
+                    # Handle failed status query
+                    logger.warning(f"Could not retrieve status for batch {batch_info['batch_num']}")
+                    for i, (invoice_data, _) in enumerate(batch_info['invoice_data']):
+                        invoice_number = ""
+                        if hasattr(invoice_data, 'invoice_number') and invoice_data.invoice_number:
+                            invoice_number = invoice_data.invoice_number
+                            
+                        result_row = {
+                            'Számlaszám': invoice_number,
+                            'Tranzakció azonosító': batch_transaction_id,
+                            'Index': batch_info['start_index'] + i,
+                            'Status': "UNKNOWN",
+                            'Warnings': "Failed to retrieve transaction status"
+                        }
+                        all_results_data.append(result_row)
+                    continue
+                
+                # Process successful status response
+                logger.info(f"Successfully retrieved status for batch {batch_info['batch_num']}")
+                
+                if transaction_response.processing_results and transaction_response.processing_results.processing_result:
+                    for processing_result in transaction_response.processing_results.processing_result:
+                        # Use the index directly from ProcessingResultType
+                        batch_relative_index = processing_result.index - 1  # Convert to 0-based for array access
+                        
+                        # Get invoice data
+                        invoice_number = ""
+                        if 0 <= batch_relative_index < len(batch_info['invoice_data']):
+                            invoice_data, _ = batch_info['invoice_data'][batch_relative_index]
+                            if hasattr(invoice_data, 'invoice_number') and invoice_data.invoice_number:
+                                invoice_number = invoice_data.invoice_number
+                        
+                        # Collect warnings
+                        warnings = []
+                        
+                        if processing_result.technical_validation_messages:
+                            for msg in processing_result.technical_validation_messages:
+                                if hasattr(msg, 'message') and msg.message:
+                                    warnings.append(f"TECH: {msg.message}")
+                        
+                        if processing_result.business_validation_messages:
+                            for msg in processing_result.business_validation_messages:
+                                if hasattr(msg, 'message') and msg.message:
+                                    warnings.append(f"BIZ: {msg.message}")
+                        
+                        warnings_text = "; ".join(warnings) if warnings else ""
+                        
+                        result_row = {
+                            'Számlaszám': invoice_number,
+                            'Tranzakció azonosító': batch_transaction_id,
+                            'Index': processing_result.index,  # Use the index directly from ProcessingResultType
+                            'Status': processing_result.invoice_status.value if processing_result.invoice_status else "",
+                            'Warnings': warnings_text
+                        }
+                        
+                        all_results_data.append(result_row)
+                else:
+                    # No processing results for this batch
+                    logger.warning(f"No processing results found for batch {batch_info['batch_num']}")
+                    for i, (invoice_data, _) in enumerate(batch_info['invoice_data']):
+                        invoice_number = ""
+                        if hasattr(invoice_data, 'invoice_number') and invoice_data.invoice_number:
+                            invoice_number = invoice_data.invoice_number
+                            
+                        result_row = {
+                            'Számlaszám': invoice_number,
+                            'Tranzakció azonosító': batch_transaction_id,
+                            'Index': batch_info['start_index'] + i,
+                            'Status': "UNKNOWN",
+                            'Warnings': "No processing results returned from NAV"
+                        }
+                        all_results_data.append(result_row)
+            
+            # Step 4: Create output Excel file
+            logger.info("Step 4: Creating output Excel file")
+            df_results = pd.DataFrame(all_results_data)
+            
+            # Ensure output directory exists
+            from pathlib import Path
+            output_path = Path(output_excel_file)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Write to Excel
+            with pd.ExcelWriter(output_excel_file, engine='openpyxl') as writer:
+                df_results.to_excel(writer, sheet_name='NAV Results', index=False)
+            
+            logger.info(f"Successfully created output Excel file: {output_excel_file}")
+            logger.info(f"Processed {len(all_results_data)} result records from {len(batches)} batches")
+            
+            return output_excel_file
+            
+        except Exception as e:
+            if isinstance(e, (NavValidationException, NavApiException)):
+                raise
+            logger.error(f"Excel to NAV processing failed: {e}")
+            raise NavApiException(f"Failed to process Excel to NAV results: {e}")
+
     def close(self):
         """Close the HTTP client."""
         self.http_client.close()
