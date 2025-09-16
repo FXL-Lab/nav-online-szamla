@@ -8,7 +8,7 @@ objects and flat Excel row representations.
 import logging
 from datetime import datetime, date
 from decimal import Decimal
-from typing import Optional, List, Tuple, Any, Dict, Union
+from typing import Optional, List, Tuple, Union
 
 from ..models import InvoiceData, ManageInvoiceOperationType
 from ..models.invoice_data import (
@@ -19,10 +19,12 @@ from ..models.invoice_data import (
     LineAmountsNormalType, LineOperationType,
     CustomerVatStatusType, UnitOfMeasureType,
     InvoiceDetailType, LineModificationReferenceType,
-    VatRateNetDataType, VatRateVatDataType
+    VatRateNetDataType, VatRateVatDataType,
+    CustomerTaxNumberType, CustomerVatDataType, SummarySimplifiedType,
+    DetailedReasonType, LineAmountsSimplifiedType
 )
 from ..models.invoice_base import (
-    TaxNumberType, AddressType, DetailedAddressType, SimpleAddressType,
+    TaxNumberType, AddressType, SimpleAddressType,
     PaymentMethodType, InvoiceCategoryType, InvoiceAppearanceType
 )
 from .models import InvoiceHeaderRow, InvoiceLineRow
@@ -812,15 +814,12 @@ class ExcelFieldMapper:
         if any([row.buyer_tax_number_main, row.buyer_community_vat_number, row.buyer_third_country_tax_number]):
             customer_tax_number = None
             if row.buyer_tax_number_main:
-                # Need to import CustomerTaxNumberType
-                from ..models.invoice_data import CustomerTaxNumberType
                 customer_tax_number = CustomerTaxNumberType(
                     taxpayer_id=cls._format_taxpayer_id(row.buyer_tax_number_main),
                     vat_code=cls._format_vat_code(row.buyer_tax_number_vat),
                     county_code=cls._format_county_code(row.buyer_tax_number_county)
                 )
             
-            from ..models.invoice_data import CustomerVatDataType
             customer_vat_data = CustomerVatDataType(
                 customer_tax_number=customer_tax_number,
                 community_vat_number=row.buyer_community_vat_number,
@@ -987,9 +986,6 @@ class ExcelFieldMapper:
                 object.__setattr__(vat_rate, 'vat_domestic_reverse_charge', None)
                 object.__setattr__(vat_rate, 'no_vat_charge', None)
             
-            # Import SummarySimplifiedType
-            from ..models.invoice_data import SummarySimplifiedType
-            
             summary_simplified = SummarySimplifiedType(
                 vat_rate=vat_rate,
                 vat_content_gross_amount=row.gross_amount_original,
@@ -1105,7 +1101,6 @@ class ExcelFieldMapper:
                         line_vat_rate.vat_domestic_reverse_charge = None
                 elif row.out_of_scope_case and row.out_of_scope_case.strip().upper() == 'ATK':
                     # Outside VAT scope (Áfa tárgyi hatályán kívül) - only VAT rate, no VAT amount
-                    from ..models.invoice_data import DetailedReasonType
                     out_of_scope_reason = DetailedReasonType(
                         case=row.out_of_scope_case.strip(),  # "ATK"
                         reason=row.out_of_scope_reason or "Áfa tárgyi hatályán kívül"  # #TODO: Default reason
@@ -1177,9 +1172,6 @@ class ExcelFieldMapper:
                     object.__setattr__(line_vat_rate, 'vat_domestic_reverse_charge', None)
                     object.__setattr__(line_vat_rate, 'no_vat_charge', None)
                 
-                # Import LineAmountsSimplifiedType
-                from ..models.invoice_data import LineAmountsSimplifiedType
-                
                 line_amounts_simplified = LineAmountsSimplifiedType(
                     line_vat_rate=line_vat_rate,
                     line_gross_amount_simplified=row.gross_amount_original,
@@ -1213,7 +1205,6 @@ class ExcelFieldMapper:
                         line_vat_rate.vat_domestic_reverse_charge = None
                 elif row.out_of_scope_case and row.out_of_scope_case.strip().upper() == 'ATK':
                     # Outside VAT scope (Áfa tárgyi hatályán kívül) - only VAT rate, no VAT amount
-                    from ..models.invoice_data import DetailedReasonType
                     out_of_scope_reason = DetailedReasonType(
                         case=row.out_of_scope_case.strip(),  # "ATK"
                         reason=row.out_of_scope_reason or "Áfa tárgyi hatályán kívül"  # #TODO: Default reason

@@ -6,6 +6,7 @@ and convert them back to InvoiceData objects that can be submitted to NAV.
 """
 
 import logging
+import re
 from pathlib import Path
 from typing import List, Tuple, Optional, Dict, Any
 from datetime import datetime, date
@@ -51,7 +52,6 @@ class InvoiceExcelImporter:
         """
         try:
             # Validate file extension
-            from pathlib import Path
             path = Path(file_path)
             if path.suffix.lower() not in ['.xlsx']:
                 raise ExcelProcessingException("File must have .xlsx extension")
@@ -131,7 +131,6 @@ class InvoiceExcelImporter:
             # Handle pandas-specific sheet not found errors
             if "Worksheet named" in str(e) and "not found" in str(e):
                 # Extract sheet name from error message
-                import re
                 match = re.search(r"Worksheet named '([^']+)' not found", str(e))
                 if match:
                     sheet_name = match.group(1)

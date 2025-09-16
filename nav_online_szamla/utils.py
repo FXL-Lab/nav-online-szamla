@@ -8,6 +8,7 @@ XML processing, and other common tasks.
 import base64
 import hashlib
 import random
+import re
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
 from datetime import datetime, timedelta, timezone
@@ -24,7 +25,6 @@ from .config import (
     CUSTOM_ID_CHARACTERS,
     CUSTOM_ID_LENGTH,
     MAX_DATE_RANGE_DAYS,
-    NETWORK_ERROR_KEYWORDS,
 )
 from .exceptions import NavValidationException, NavXmlParsingException
 
@@ -441,10 +441,6 @@ def serialize_invoice_data_to_xml(invoice_data) -> str:
         NavXmlParsingException: If serialization fails
     """
     try:
-        from xsdata.formats.dataclass.context import XmlContext
-        from xsdata.formats.dataclass.serializers import XmlSerializer
-        from xsdata.formats.dataclass.serializers.config import SerializerConfig
-        
         # Create XML context and serializer
         context = XmlContext()
         config = SerializerConfig(
@@ -475,7 +471,6 @@ def _fix_invoice_data_namespaces(xml_string: str) -> str:
     - Some elements in base namespace: taxpayerId, vatCode, countyCode, simpleAddress, etc.
     - Most elements in data namespace (default)
     """
-    import re
     
     # First, handle the root element and add proper namespace declarations
     if 'InvoiceDataType' in xml_string:
@@ -551,7 +546,6 @@ def _fix_vat_rate_elements(xml_string: str) -> str:
     When vatPercentage is present (normal VAT), remove the default elements
     that have schema constraints requiring specific values.
     """
-    import re
     
     # Find all vatRate blocks (both <vatRate> and <lineVatRate>) that contain vatPercentage
     vat_rate_patterns = [
