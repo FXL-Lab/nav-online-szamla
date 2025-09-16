@@ -6,8 +6,12 @@ This module provides the main client class for interacting with the NAV Online S
 
 import gzip
 import logging
+import time
 from datetime import datetime
+from pathlib import Path
 from typing import List, Optional, Tuple
+
+import pandas as pd
 
 from xsdata.formats.dataclass.context import XmlContext
 from xsdata.formats.dataclass.serializers import XmlSerializer
@@ -99,8 +103,14 @@ from .utils import (
     decode_exchange_token,
     encode_annulment_data_to_base64,
     serialize_annulment_data_to_xml,
+    # Additional utility functions used in methods
+    serialize_invoice_data_to_xml, 
+    encode_invoice_data_to_base64,
 )
 from .http_client import NavHttpClient
+
+# Excel functionality
+from .excel import InvoiceExcelExporter, InvoiceExcelImporter
 
 logger = logging.getLogger(__name__)
 
@@ -1359,11 +1369,6 @@ class NavOnlineInvoiceClient:
         Raises:
             NavValidationException: If parameters are invalid
         """
-        from nav_online_szamla.utils import (
-            serialize_invoice_data_to_xml, 
-            encode_invoice_data_to_base64,
-            calculate_complex_request_signature
-        )
         
         if not exchange_token:
             raise NavValidationException("Exchange token is required")
@@ -1697,9 +1702,6 @@ class NavOnlineInvoiceClient:
             ExcelProcessingException: If Excel export fails
         """
         try:
-            # Import Excel functionality
-            from .excel import InvoiceExcelExporter
-            
             logger.info(f"Starting Excel export for date range: {start_date.date()} to {end_date.date()}")
             
             # Get invoice data
@@ -1748,9 +1750,6 @@ class NavOnlineInvoiceClient:
             Import functionality is not yet fully implemented.
         """
         try:
-            # Import Excel functionality
-            from .excel import InvoiceExcelImporter
-            
             logger.info(f"Starting Excel import from {excel_file}")
             
             # Import from Excel
@@ -1813,9 +1812,6 @@ class NavOnlineInvoiceClient:
             raise NavValidationException("max_invoices_per_batch cannot exceed 100 (NAV API limit)")
             
         try:
-            import pandas as pd
-            from .excel import InvoiceExcelImporter
-            
             logger.info(f"Starting Excel to NAV processing: {input_excel_file} -> {output_excel_file}")
             
             # Step 1: Import invoice data from Excel
@@ -1876,7 +1872,6 @@ class NavOnlineInvoiceClient:
             
             # Step 3: Wait and query transaction status for all batches
             logger.info(f"Step 3: Checking transaction status for {len(batch_results)} batches (waiting {wait_time} seconds)")
-            import time
             time.sleep(wait_time)
             
             # Query status for each batch
@@ -1998,7 +1993,6 @@ class NavOnlineInvoiceClient:
             df_results = pd.DataFrame(all_results_data)
             
             # Ensure output directory exists
-            from pathlib import Path
             output_path = Path(output_excel_file)
             output_path.parent.mkdir(parents=True, exist_ok=True)
             
