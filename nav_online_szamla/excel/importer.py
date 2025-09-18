@@ -414,8 +414,8 @@ class InvoiceExcelImporter:
             Tuple[InvoiceData, ManageInvoiceOperationType]: Reconstructed invoice data
         """
         try:
-            # Use the mapper to convert header data
-            invoice_data, operation_type = ExcelFieldMapper.header_row_to_invoice_data(header_row)
+            # Use the mapper to convert header data with line data for proper VAT rate aggregation
+            invoice_data, operation_type = ExcelFieldMapper.header_row_to_invoice_data(header_row, line_rows)
             
             # Convert line data if present
             if line_rows:
