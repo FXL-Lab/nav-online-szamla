@@ -624,7 +624,6 @@ class NavOnlineInvoiceClient:
             if not parsed_response.invoice_data_result or not parsed_response.invoice_data_result.invoice_data:
                 raise NavInvoiceNotFoundException(f"Invoice {invoice_number} not found")
 
-            logger.info(f"Successfully queried invoice data for {invoice_number}")
             # Parse the Base64 encoded invoice data
             if parsed_response.invoice_data_result.invoice_data:
                 try:
@@ -673,7 +672,6 @@ class NavOnlineInvoiceClient:
                         parsed_invoice_data = self._parse_response_from_xml(xml_content, InvoiceData)
                         # Replace the bytes with the parsed object
                         parsed_response.invoice_data_result.invoice_data = parsed_invoice_data
-                        logger.info(f"Successfully parsed invoice data XML for {invoice_number}")
                     else:
                         # If it's not bytes, log what it is and keep it
                         logger.warning(f"Invoice data is not bytes, it's {type(xml_bytes)}. Keeping as-is.")
@@ -682,7 +680,6 @@ class NavOnlineInvoiceClient:
                     logger.warning(f"Failed to parse invoice data XML: {e}")
                     # Keep the original bytes data if parsing fails
             
-            logger.info(f"Successfully queried invoice data for {invoice_number}")
             return parsed_response
 
         except Exception as e:
@@ -937,7 +934,6 @@ class NavOnlineInvoiceClient:
             if not isinstance(invoice_data, InvoiceData):
                 raise NavXmlParsingException(f"Expected InvoiceData object, got {type(invoice_data)}")
             
-            logger.info(f"Successfully extracted invoice data for {invoice_number}")
             return invoice_data
 
         except Exception as e:
@@ -1098,8 +1094,10 @@ class NavOnlineInvoiceClient:
                             all_invoice_data.append(result)
                             processed_count += 1
 
-                            if processed_count % 10 == 0:
-                                logger.info(f"Processed {processed_count}/{len(invoice_digests)} invoices so far...")
+                            # Show progress more frequently for larger datasets
+                            if processed_count % 5 == 0 or processed_count == len(invoice_digests):
+                                logger.info(f"📊 Progress: {processed_count}/{len(invoice_digests)} invoices processed ({processed_count/len(invoice_digests)*100:.1f}%)")
+                                print(f"📊 Progress: {processed_count}/{len(invoice_digests)} invoices processed ({processed_count/len(invoice_digests)*100:.1f}%)")
                         else:
                             failed_count += 1
 
@@ -1119,8 +1117,9 @@ class NavOnlineInvoiceClient:
                         all_invoice_data.append(result)
                         processed_count += 1
 
-                        if processed_count % 10 == 0:
-                            logger.info(f"Processed {processed_count}/{len(invoice_digests)} invoices so far...")
+                        # Show progress more frequently for larger datasets
+                        if processed_count % 5 == 0 or processed_count == len(invoice_digests):
+                            logger.info(f"📊 Progress: {processed_count}/{len(invoice_digests)} invoices processed ({processed_count/len(invoice_digests)*100:.1f}%)")
                     else:
                         failed_count += 1
 
@@ -1230,6 +1229,8 @@ class NavOnlineInvoiceClient:
             if not invoice_digests:
                 logger.info("No invoices found in the specified date range")
                 return []
+
+            logger.info(f"🎯 Found total of {len(invoice_digests)} invoices to process")
 
             # Step 2: Process invoices (threaded or non-threaded)
             all_invoice_data = self._process_invoice_digests(
@@ -1784,11 +1785,17 @@ class NavOnlineInvoiceClient:
                 max_workers=max_workers
             )
             
+            if not invoice_data_list:
+                logger.info("No invoices found to export")
+                return 0
+                
+            logger.info(f"📄 Starting Excel export of {len(invoice_data_list)} invoices...")
+            
             # Export to Excel
             exporter = InvoiceExcelExporter()
             exporter.export_to_excel(invoice_data_list, output_file)
             
-            logger.info(f"Successfully exported {len(invoice_data_list)} invoices to {output_file}")
+            logger.info(f"✅ Successfully exported {len(invoice_data_list)} invoices to {output_file}")
             return len(invoice_data_list)
             
         except Exception as e:

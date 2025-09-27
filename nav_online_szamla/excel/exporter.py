@@ -75,7 +75,7 @@ class InvoiceExcelExporter:
                 except Exception as e:
                     # Get invoice identifier safely
                     invoice_id = getattr(invoice_data, 'invoice_number', 'unknown')
-                    logger.warning(f"Failed to convert line data for {invoice_id}: {e}")
+                    logger.exception(f"Failed to convert line data for {invoice_id}: {e}")
                     # Continue with header even if lines fail            # Create Excel file
             # Only raise exception if ALL data is invalid and are not proper objects
             # Allow mapping failures on valid objects to create empty files
@@ -207,6 +207,8 @@ class InvoiceExcelExporter:
             'cash_accounting_indicator': 'Pénzforgalmi elszámolás jelölése',
             'invoice_category': 'Számla típusa',
             'completeness_indicator': 'Az adatszolgáltatás maga a számla',
+            'advance_payment_indicator': 'Előleg jelleg jelölése',
+            'no_vat_charge_indicator': 'Nincs felszámított áfa az áfa törvény 17. § alapján',
         }
         
         if include_operation_type:
