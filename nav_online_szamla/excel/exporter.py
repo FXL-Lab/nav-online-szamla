@@ -238,22 +238,44 @@ class InvoiceExcelExporter:
         include_operation_type: bool = False
     ) -> None:
         """Populate the lines sheet with invoice line data."""
-        # Create lines columns mapping
+        # Create comprehensive lines columns mapping to match expected structure
         lines_columns = {
             'invoice_number': 'Számla sorszáma',
+            'buyer_tax_number_main': 'Vevő adószáma (törzsszám)',
+            'buyer_name': 'Vevő neve',
+            'seller_tax_number_main': 'Eladó adószáma (törzsszám)',
+            'seller_name': 'Eladó neve',
             'line_number': 'Tétel sorszáma',
+            'modified_line_number': 'Módosítással érintett tétel sorszáma',
+            'line_modification_type': 'Módosítás jellege',
             'description': 'Megnevezés',
             'quantity': 'Mennyiség',
-            'unit_of_measure': 'Mértékegység',
+            'unit_of_measure': 'Mennyiségi egység',
             'unit_price': 'Egységár',
-            'net_amount_original': 'Nettó összeg (eredeti pénznem)',
-            'net_amount_huf': 'Nettó összeg (HUF)',
-            'vat_rate': 'ÁFA kulcs',
-            'vat_amount_original': 'ÁFA összeg (eredeti pénznem)', 
-            'vat_amount_huf': 'ÁFA összeg (HUF)',
-            'gross_amount_original': 'Bruttó összeg (eredeti pénznem)',
-            'gross_amount_huf': 'Bruttó összeg (HUF)',
-            'line_modification_type': 'Tétel módosítás típusa',
+            'net_amount_original': 'Nettó összeg (a számla pénznemében)',
+            'net_amount_huf': 'Nettó összeg (forintban)',
+            'vat_rate': 'Adó mértéke',
+            'vat_exemption_indicator': 'Áfamentesség jelölés',
+            'vat_exemption_case': 'Áfamentesség esete',
+            'vat_exemption_reason': 'Áfamentesség leírása',
+            'out_of_scope_indicator': 'ÁFA törvény hatályán kívüli jelölés',
+            'out_of_scope_case': 'ÁFA törvény hatályon kívüliségének esete',
+            'out_of_scope_reason': 'ÁFA törvény hatályon kívüliségének leírása',
+            'tax_base_deviation_case': 'Adóalap és felszámított adó eltérésének esete',
+            'different_tax_rate_content': 'Eltérő adóalap és felszámított adó adómérték, adótartalom',
+            'domestic_reverse_charge_indicator': 'Belföldi fordított adózás jelölés',
+            'margin_scheme_with_vat': 'Áthárított adót tartalmazó különbözet szerinti adózás',
+            'margin_scheme_without_vat': 'Áthárított adót nem tartalmazó különbözet szerinti adózás',
+            'margin_scheme_indicator': 'Különbözet szerinti adózás',
+            'vat_amount_original': 'ÁFA összeg (a számla pénznemében)',
+            'vat_amount_huf': 'ÁFA összeg (forintban)',
+            'gross_amount_original': 'Bruttó összeg (a számla pénznemében)',
+            'gross_amount_huf': 'Bruttó összeg (forintban)',
+            'vat_content': 'ÁFA tartalom',
+            'advance_payment_indicator': 'Előleg jelleg jelölése',
+            'line_exchange_rate': 'Tétel árfolyam',
+            'line_fulfillment_date': 'Tétel teljesítés dátuma',
+            'no_vat_charge_indicator': 'Nincs felszámított áfa az áfa törvény 17. § alapján',
         }
         
         if include_operation_type:
@@ -323,22 +345,63 @@ class InvoiceExcelExporter:
         }
 
     def _line_row_to_dict(self, row: InvoiceLineRow) -> dict:
-        """Convert InvoiceLineRow to dictionary."""
+        """Convert InvoiceLineRow to dictionary with all comprehensive fields."""
         return {
+            # Reference information
             'invoice_number': row.invoice_number,
+            'buyer_tax_number_main': row.buyer_tax_number_main,
+            'buyer_name': row.buyer_name,
+            'seller_tax_number_main': row.seller_tax_number_main,
+            'seller_name': row.seller_name,
+            
+            # Line item identification
             'line_number': row.line_number,
+            'modified_line_number': row.modified_line_number,
+            'line_modification_type': row.line_modification_type,
+            
+            # Product/service information
             'description': row.description,
             'quantity': row.quantity,
             'unit_of_measure': row.unit_of_measure,
             'unit_price': row.unit_price,
+            
+            # Financial amounts
             'net_amount_original': row.net_amount_original,
             'net_amount_huf': row.net_amount_huf,
+            
+            # VAT information
             'vat_rate': row.vat_rate,
+            'vat_exemption_indicator': row.vat_exemption_indicator,
+            'vat_exemption_case': row.vat_exemption_case,
+            'vat_exemption_reason': row.vat_exemption_reason,
+            
+            # Out of scope VAT
+            'out_of_scope_indicator': row.out_of_scope_indicator,
+            'out_of_scope_case': row.out_of_scope_case,
+            'out_of_scope_reason': row.out_of_scope_reason,
+            
+            # Tax deviation
+            'tax_base_deviation_case': row.tax_base_deviation_case,
+            'different_tax_rate_content': row.different_tax_rate_content,
+            
+            # Reverse charge and margin scheme
+            'domestic_reverse_charge_indicator': row.domestic_reverse_charge_indicator,
+            'margin_scheme_with_vat': row.margin_scheme_with_vat,
+            'margin_scheme_without_vat': row.margin_scheme_without_vat,
+            'margin_scheme_indicator': row.margin_scheme_indicator,
+            
+            # VAT amounts
             'vat_amount_original': row.vat_amount_original,
             'vat_amount_huf': row.vat_amount_huf,
             'gross_amount_original': row.gross_amount_original,
             'gross_amount_huf': row.gross_amount_huf,
-            'line_modification_type': row.line_modification_type,
+            
+            # Additional information
+            'vat_content': row.vat_content,
+            'advance_payment_indicator': row.advance_payment_indicator,
+            'line_exchange_rate': row.line_exchange_rate,
+            'line_fulfillment_date': row.line_fulfillment_date,
+            'no_vat_charge_indicator': row.no_vat_charge_indicator,
         }
 
     def _validate_file_path(self, file_path: str) -> None:

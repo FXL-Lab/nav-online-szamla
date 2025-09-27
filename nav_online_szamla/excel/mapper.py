@@ -437,6 +437,9 @@ class ExcelFieldMapper:
             # Invoice reference (modification) data
             if invoice.invoice_reference:
                 cls._map_invoice_reference_to_header(invoice.invoice_reference, row)
+                # For modification invoices, the invoice_issue_date is actually the modification date
+                if row.original_invoice_number:  # This indicates it's a modification
+                    row.modification_date = row.invoice_issue_date
             
             # Normalize all None values to appropriate defaults
             cls._normalize_header_row_values(row)
@@ -585,43 +588,122 @@ class ExcelFieldMapper:
     def _map_invoice_reference_to_header(cls, reference: InvoiceReferenceType, row: InvoiceHeaderRow) -> None:
         """Map invoice reference (modification) data to header row."""
         row.original_invoice_number = reference.original_invoice_number
-        row.modification_date = cls._parse_date(reference.modify_date)
+        # Note: InvoiceReferenceType doesn't have modify_date field
+        # The modification date comes from invoice_issue_date in the main invoice head
+        # So we skip setting modification_date here - it should be set from the main head
         if reference.modification_index:
             row.modification_index = reference.modification_index
 
     @classmethod
     def _map_line_to_line_row(cls, line: LineType, row: InvoiceLineRow) -> None:
-        """Map line data to line row."""
+        """Map line data to line row with comprehensive field mapping."""
+        # Basic line information
         row.line_number = line.line_number
-        row.line_modification_type = (line.line_modification_reference.line_operation.value 
-                                    if line.line_modification_reference and line.line_modification_reference.line_operation 
-                                    else None)
         row.description = line.line_description
+        
+        # Line modification reference
+        if line.line_modification_reference:
+            row.line_modification_type = line.line_modification_reference.line_operation.value if line.line_modification_reference.line_operation else None
+            row.modified_line_number = line.line_modification_reference.line_number_reference
         
         # Quantities and prices
         row.quantity = line.quantity
         row.unit_of_measure = line.unit_of_measure.value if line.unit_of_measure else None
         row.unit_price = line.unit_price
         
-        # Amounts
-        if line.line_amounts_normal and line.line_amounts_normal.line_net_amount_data:
-            net_data = line.line_amounts_normal.line_net_amount_data
+        # Line exchange rate (if different from invoice level)
+        row.line_exchange_rate = getattr(line, 'line_exchange_rate', None)
+        
+        # Line fulfillment date
+        if hasattr(line, 'line_delivery_date') and line.line_delivery_date:
+            row.line_fulfillment_date = cls._parse_date(line.line_delivery_date)
+        
+        # Advance payment indicator
+        row.advance_payment_indicator = getattr(line, 'advance_payment_indicator', None)
+        
+        # Handle normal amounts (most common case)
+        if line.line_amounts_normal:
+            cls._map_line_amounts_normal(line.line_amounts_normal, row)
+            
+        # Handle simplified amounts
+        elif hasattr(line, 'line_amounts_simplified') and line.line_amounts_simplified:
+            cls._map_line_amounts_simplified(line.line_amounts_simplified, row)
+    
+    @classmethod
+    def _map_line_amounts_normal(cls, amounts_normal: LineAmountsNormalType, row: InvoiceLineRow) -> None:
+        """Map normal line amounts to row."""
+        # Net amounts
+        if amounts_normal.line_net_amount_data:
+            net_data = amounts_normal.line_net_amount_data
             row.net_amount_original = net_data.line_net_amount
             row.net_amount_huf = net_data.line_net_amount_huf
             
-        if line.line_amounts_normal and line.line_amounts_normal.line_vat_data:
-            vat_data = line.line_amounts_normal.line_vat_data
+        # VAT information
+        if amounts_normal.line_vat_rate:
+            vat_rate_info = amounts_normal.line_vat_rate
+            
+            # VAT rate percentage
+            if hasattr(vat_rate_info, 'vat_percentage'):
+                row.vat_rate = vat_rate_info.vat_percentage
+                
+            # VAT exemption information
+            if hasattr(vat_rate_info, 'vat_exemption') and vat_rate_info.vat_exemption:
+                row.vat_exemption_indicator = True
+                row.vat_exemption_case = vat_rate_info.vat_exemption.case.value if vat_rate_info.vat_exemption.case else None
+                row.vat_exemption_reason = vat_rate_info.vat_exemption.reason
+                
+            # Out of scope VAT
+            if hasattr(vat_rate_info, 'vat_out_of_scope') and vat_rate_info.vat_out_of_scope:
+                row.out_of_scope_indicator = True
+                row.out_of_scope_case = vat_rate_info.vat_out_of_scope.case.value if vat_rate_info.vat_out_of_scope.case else None
+                row.out_of_scope_reason = vat_rate_info.vat_out_of_scope.reason
+                
+            # Domestic reverse charge
+            if hasattr(vat_rate_info, 'domestic_reverse_charge') and vat_rate_info.domestic_reverse_charge:
+                row.domestic_reverse_charge_indicator = True
+                
+            # Margin scheme
+            if hasattr(vat_rate_info, 'margin_scheme_vat') and vat_rate_info.margin_scheme_vat:
+                row.margin_scheme_with_vat = True
+                row.margin_scheme_indicator = vat_rate_info.margin_scheme_vat.value if hasattr(vat_rate_info.margin_scheme_vat, 'value') else None
+                
+            if hasattr(vat_rate_info, 'margin_scheme_no_vat') and vat_rate_info.margin_scheme_no_vat:
+                row.margin_scheme_without_vat = True
+                row.margin_scheme_indicator = vat_rate_info.margin_scheme_no_vat.value if hasattr(vat_rate_info.margin_scheme_no_vat, 'value') else None
+                
+            # No VAT charge (section 17)
+            if hasattr(vat_rate_info, 'no_vat_charge'):
+                row.no_vat_charge_indicator = vat_rate_info.no_vat_charge
+                
+        # VAT amounts
+        if amounts_normal.line_vat_data:
+            vat_data = amounts_normal.line_vat_data
             row.vat_amount_original = vat_data.line_vat_amount
             row.vat_amount_huf = vat_data.line_vat_amount_huf
             
-        if line.line_amounts_normal and line.line_amounts_normal.line_vat_rate:
-            row.vat_rate = line.line_amounts_normal.line_vat_rate.vat_percentage
-            row.vat_exemption_indicator = getattr(line.line_amounts_normal, 'vat_exemption', None) is not None
-            
-        if line.line_amounts_normal and line.line_amounts_normal.line_gross_amount_data:
-            gross_data = line.line_amounts_normal.line_gross_amount_data
+        # Gross amounts
+        if amounts_normal.line_gross_amount_data:
+            gross_data = amounts_normal.line_gross_amount_data
             row.gross_amount_original = gross_data.line_gross_amount_normal
             row.gross_amount_huf = gross_data.line_gross_amount_normal_huf
+            
+        # Calculate missing gross amounts if possible
+        if not row.gross_amount_original and row.net_amount_original and row.vat_amount_original:
+            row.gross_amount_original = row.net_amount_original + row.vat_amount_original
+        if not row.gross_amount_huf and row.net_amount_huf and row.vat_amount_huf:
+            row.gross_amount_huf = row.net_amount_huf + row.vat_amount_huf
+    
+    @classmethod
+    def _map_line_amounts_simplified(cls, amounts_simplified: LineAmountsSimplifiedType, row: InvoiceLineRow) -> None:
+        """Map simplified line amounts to row."""
+        if hasattr(amounts_simplified, 'line_vat_rate') and amounts_simplified.line_vat_rate:
+            row.vat_rate = amounts_simplified.line_vat_rate.vat_percentage
+            
+        if hasattr(amounts_simplified, 'line_gross_amount_simplified') and amounts_simplified.line_gross_amount_simplified:
+            row.gross_amount_original = amounts_simplified.line_gross_amount_simplified
+            
+        if hasattr(amounts_simplified, 'line_gross_amount_simplified_huf') and amounts_simplified.line_gross_amount_simplified_huf:
+            row.gross_amount_huf = amounts_simplified.line_gross_amount_simplified_huf
 
     @classmethod
     def _map_address_to_seller(cls, address: AddressType, row: InvoiceHeaderRow) -> None:

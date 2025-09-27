@@ -7,6 +7,7 @@ This module provides the main client class for interacting with the NAV Online S
 import gzip
 import logging
 import time
+import concurrent.futures
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -1005,20 +1006,152 @@ class NavOnlineInvoiceClient:
             logger.error(f"Unexpected error in check_invoice_exists: {e}")
             raise NavApiException(f"Failed to check if invoice exists: {str(e)}")
 
+    def _process_single_invoice_digest(
+        self,
+        digest,
+        invoice_direction: InvoiceDirectionType
+    ) -> Optional[Tuple[InvoiceData, ManageInvoiceOperationType]]:
+        """
+        Process a single invoice digest to get detailed data.
+        
+        This method can be used by both threaded and non-threaded implementations.
+        
+        Args:
+            digest: Invoice digest from queryInvoiceDigest response
+            invoice_direction: Direction of the invoice (OUTBOUND/INBOUND)
+            
+        Returns:
+            Tuple of (InvoiceData, ManageInvoiceOperationType) if successful, None otherwise
+        """
+        try:
+            logger.debug(f"Fetching details for invoice: {digest.invoice_number}")
+
+            # For OUTBOUND invoices, don't include supplier_tax_number as it causes API error
+            # For INBOUND invoices, include supplier_tax_number if available
+            supplier_tax_for_request = None
+            if invoice_direction == InvoiceDirectionType.INBOUND:
+                supplier_tax_for_request = digest.supplier_tax_number
+
+            # Get detailed invoice data using the get_invoice_data method
+            invoice_data = self.get_invoice_data(
+                invoice_number=digest.invoice_number,
+                invoice_direction=invoice_direction,
+                batch_index=digest.batch_index,
+                supplier_tax_number=supplier_tax_for_request
+            )
+
+            if invoice_data:
+                return (invoice_data, digest.invoice_operation)
+            else:
+                logger.warning(f"No detail data found for invoice: {digest.invoice_number}")
+                return None
+
+        except NavInvoiceNotFoundException:
+            logger.warning(f"Invoice details not found for: {digest.invoice_number}")
+            return None
+        except Exception as e:
+            logger.error(f"Error processing invoice {digest.invoice_number}: {str(e)}")
+            return None
+
+    def _process_invoice_digests(
+        self,
+        invoice_digests: list,
+        invoice_direction: InvoiceDirectionType,
+        use_threading: bool = False,
+        max_workers: int = 4
+    ) -> List[Tuple[InvoiceData, ManageInvoiceOperationType]]:
+        """
+        Process a list of invoice digests to get detailed data.
+        
+        Args:
+            invoice_digests: List of invoice digests from queryInvoiceDigest response
+            invoice_direction: Direction of the invoices (OUTBOUND/INBOUND)
+            use_threading: Whether to use threading for parallel processing
+            max_workers: Maximum number of threads (only used if use_threading=True)
+            
+        Returns:
+            List of tuples containing (InvoiceData, ManageInvoiceOperationType)
+        """
+        if not invoice_digests:
+            return []
+            
+        logger.info(f"Processing {len(invoice_digests)} invoice digests (threading: {use_threading})")
+        
+        all_invoice_data = []
+        processed_count = 0
+        failed_count = 0
+        
+        if use_threading:
+            # Use threading for parallel processing
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # Submit all tasks
+                future_to_digest = {
+                    executor.submit(self._process_single_invoice_digest, digest, invoice_direction): digest 
+                    for digest in invoice_digests
+                }
+
+                # Collect results as they complete
+                for future in concurrent.futures.as_completed(future_to_digest):
+                    try:
+                        result = future.result()
+                        if result is not None:
+                            all_invoice_data.append(result)
+                            processed_count += 1
+
+                            if processed_count % 10 == 0:
+                                logger.info(f"Processed {processed_count}/{len(invoice_digests)} invoices so far...")
+                        else:
+                            failed_count += 1
+
+                    except Exception as e:
+                        failed_count += 1
+                        digest = future_to_digest[future]
+                        logger.error(f"Failed to process invoice {digest.invoice_number}: {e}")
+        else:
+            # Sequential processing
+            for i, digest in enumerate(invoice_digests, 1):
+                try:
+                    logger.debug(f"Processing invoice {i}/{len(invoice_digests)}: {digest.invoice_number}")
+                    
+                    result = self._process_single_invoice_digest(digest, invoice_direction)
+                    
+                    if result:
+                        all_invoice_data.append(result)
+                        processed_count += 1
+
+                        if processed_count % 10 == 0:
+                            logger.info(f"Processed {processed_count}/{len(invoice_digests)} invoices so far...")
+                    else:
+                        failed_count += 1
+
+                except Exception as e:
+                    failed_count += 1
+                    logger.error(f"Error processing invoice {digest.invoice_number}: {str(e)}")
+        
+        logger.info(
+            f"Completed processing {len(invoice_digests)} invoice digests. "
+            f"Successfully processed: {processed_count}, Failed: {failed_count}"
+        )
+        
+        return all_invoice_data
+
     def get_all_invoice_data_for_date_range(
         self,
         start_date: datetime,
         end_date: datetime,
         invoice_direction: InvoiceDirectionType = InvoiceDirectionType.OUTBOUND,
+        use_threading: bool = False,
+        max_workers: int = 4
     ) -> List[tuple[InvoiceData, ManageInvoiceOperationType]]:
         """
-        Get all invoice data for a given date range by first querying invoice digests
-        and then fetching detailed data for each invoice.
+        Get all invoice data for a given date range with configurable threading.
 
         Args:
             start_date: Start date for the query range
             end_date: End date for the query range
             invoice_direction: Invoice direction to query (default: OUTBOUND)
+            use_threading: Whether to use threading for improved performance (default: False)
+            max_workers: Maximum number of threads for parallel processing (default: 4, used only if use_threading=True)
 
         Returns:
             List[tuple[InvoiceData, ManageInvoiceOperationType]]: List of tuples containing 
@@ -1038,20 +1171,24 @@ class NavOnlineInvoiceClient:
                 f"Date range too large. Maximum allowed: {MAX_DATE_RANGE_DAYS} days"
             )
 
-        all_invoice_data = []
-        processed_count = 0
+        # Validate max_workers if threading is enabled
+        if use_threading and (max_workers < 1 or max_workers > 20):
+            raise NavValidationException("max_workers must be between 1 and 20")
+
+        logger.info(
+            f"Starting invoice data retrieval for date range: {start_date.date()} to {end_date.date()}"
+            f" (threading: {'enabled' if use_threading else 'disabled'}"
+            f"{f', max_workers: {max_workers}' if use_threading else ''})"
+        )
 
         try:
-            logger.info(
-                f"Starting comprehensive invoice data retrieval for date range: {start_date.date()} to {end_date.date()}"
-            )
-
-            # Step 1: Query invoice digests to get all invoices in the date range
+            # Step 1: Collect all invoice digests first (always sequential)
+            invoice_digests = []
             page = 1
-            total_found = 0
 
             while True:
                 logger.info(f"Querying invoice digests - page {page}")
+                
                 # Create invoice query params
                 invoice_query_params = InvoiceQueryParamsType(
                     mandatory_query_params=MandatoryQueryParamsType(
@@ -1073,60 +1210,12 @@ class NavOnlineInvoiceClient:
                     logger.info(f"No more invoices found on page {page}")
                     break
 
-                invoice_digests = digest_response.invoice_digest_result.invoice_digest
-                total_found += len(invoice_digests)
+                page_digests = digest_response.invoice_digest_result.invoice_digest
+                invoice_digests.extend(page_digests)
+                
                 logger.info(
-                    f"Found {len(invoice_digests)} invoices on page {page} (total so far: {total_found})"
+                    f"Found {len(page_digests)} invoices on page {page} (total so far: {len(invoice_digests)})"
                 )
-
-                # Step 2: Get detailed data for each invoice digest
-                for digest in invoice_digests:
-                    try:
-                        logger.info(
-                            f"Fetching details for invoice: {digest.invoice_number}"
-                        )
-
-                        # Create detailed data request
-                        # For OUTBOUND invoices, don't include supplier_tax_number as it causes API error
-                        # For INBOUND invoices, include supplier_tax_number if available
-                        supplier_tax_for_request = None
-                        if invoice_direction == InvoiceDirectionType.INBOUND:
-                            supplier_tax_for_request = digest.supplier_tax_number
-
-                        # Get detailed invoice data using the get_invoice_data method
-                        # which returns the parsed InvoiceData object directly
-                        invoice_data = self.get_invoice_data(
-                            invoice_number=digest.invoice_number,
-                            invoice_direction=invoice_direction,
-                            batch_index=digest.batch_index,
-                            supplier_tax_number=supplier_tax_for_request
-                        )
-
-                        if invoice_data:
-                            # Combine invoice data with operation type from digest
-                            all_invoice_data.append((invoice_data, digest.invoice_operation))
-                            processed_count += 1
-
-                            if processed_count % 10 == 0:
-                                logger.info(
-                                    f"Processed {processed_count} invoices so far..."
-                                )
-                        else:
-                            logger.warning(
-                                f"No detail data found for invoice: {digest.invoice_number}"
-                            )
-
-                    except NavInvoiceNotFoundException:
-                        logger.warning(
-                            f"Invoice details not found for: {digest.invoice_number}"
-                        )
-                        continue
-                    except Exception as e:
-                        logger.error(
-                            f"Error processing invoice {digest.invoice_number}: {str(e)}"
-                        )
-                        # Continue with next invoice rather than failing completely
-                        continue
 
                 # Check if there are more pages
                 if (
@@ -1138,9 +1227,22 @@ class NavOnlineInvoiceClient:
 
                 page += 1
 
-            logger.info(
-                f"Completed invoice data retrieval. Total processed: {processed_count} invoices"
+            if not invoice_digests:
+                logger.info("No invoices found in the specified date range")
+                return []
+
+            # Step 2: Process invoices (threaded or non-threaded)
+            all_invoice_data = self._process_invoice_digests(
+                invoice_digests=invoice_digests,
+                invoice_direction=invoice_direction,
+                use_threading=use_threading,
+                max_workers=max_workers
             )
+
+            logger.info(
+                f"Completed invoice data retrieval. Total processed: {len(all_invoice_data)} invoices"
+            )
+            
             return all_invoice_data
 
         except (NavValidationException, NavApiException):
@@ -1150,7 +1252,7 @@ class NavOnlineInvoiceClient:
                 f"Unexpected error in get_all_invoice_data_for_date_range: {str(e)}"
             )
             raise NavApiException(
-                f"Unexpected error during comprehensive data retrieval: {str(e)}"
+                f"Unexpected error during data retrieval: {str(e)}"
             )
 
     def create_manage_annulment_request(
@@ -1639,16 +1741,17 @@ class NavOnlineInvoiceClient:
         """Check if the client is configured for the production environment."""
         return self.environment == NavEnvironment.PRODUCTION
 
-    # Excel Export/Import Convenience Methods
     def export_invoices_to_excel(
         self,
         start_date: datetime,
         end_date: datetime,
         output_file: str,
-        invoice_direction: InvoiceDirectionType = InvoiceDirectionType.OUTBOUND
+        invoice_direction: InvoiceDirectionType = InvoiceDirectionType.OUTBOUND,
+        use_threading: bool = False,
+        max_workers: int = 4
     ) -> int:
         """
-        Export invoice data to Excel file for a given date range.
+        Export invoice data to Excel file for a given date range with configurable threading.
         
         This is a convenience method that combines get_all_invoice_data_for_date_range
         with Excel export functionality.
@@ -1658,6 +1761,8 @@ class NavOnlineInvoiceClient:
             end_date: End date for the query range
             output_file: Path where the Excel file should be saved
             invoice_direction: Invoice direction to query (default: OUTBOUND)
+            use_threading: Whether to use threading for improved performance (default: False)
+            max_workers: Maximum number of threads for parallel processing (default: 4)
             
         Returns:
             int: Number of invoices exported
@@ -1670,11 +1775,13 @@ class NavOnlineInvoiceClient:
         try:
             logger.info(f"Starting Excel export for date range: {start_date.date()} to {end_date.date()}")
             
-            # Get invoice data
+            # Get invoice data with configurable threading
             invoice_data_list = self.get_all_invoice_data_for_date_range(
                 start_date=start_date,
                 end_date=end_date,
-                invoice_direction=invoice_direction
+                invoice_direction=invoice_direction,
+                use_threading=use_threading,
+                max_workers=max_workers
             )
             
             # Export to Excel
