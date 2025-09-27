@@ -909,7 +909,25 @@ class ExcelFieldMapper:
     def _map_line_amounts_simplified(cls, amounts_simplified: LineAmountsSimplifiedType, row: InvoiceLineRow) -> None:
         """Map simplified line amounts to row."""
         if hasattr(amounts_simplified, 'line_vat_rate') and amounts_simplified.line_vat_rate:
-            row.vat_rate = amounts_simplified.line_vat_rate.vat_percentage
+            vat_rate_obj = amounts_simplified.line_vat_rate
+            
+            # Set VAT rate percentage
+            if hasattr(vat_rate_obj, 'vat_percentage') and vat_rate_obj.vat_percentage:
+                row.vat_rate = vat_rate_obj.vat_percentage
+            
+            # Set VAT content for simplified invoices
+            # VAT content = VAT rate / (1 + VAT rate) for simplified invoices
+            if hasattr(vat_rate_obj, 'vat_content') and vat_rate_obj.vat_content is not None:
+                row.vat_content = vat_rate_obj.vat_content
+            elif hasattr(vat_rate_obj, 'vat_percentage') and vat_rate_obj.vat_percentage is not None:
+                # Calculate VAT content from VAT percentage for simplified invoices
+                # VAT content = VAT rate / (1 + VAT rate)
+                vat_percentage = Decimal(str(vat_rate_obj.vat_percentage))
+                if vat_percentage > 0:
+                    vat_content = vat_percentage / (Decimal('1') + vat_percentage)
+                    row.vat_content = str(vat_content)
+                else:
+                    row.vat_content = "0"
             
         if hasattr(amounts_simplified, 'line_gross_amount_simplified') and amounts_simplified.line_gross_amount_simplified:
             row.gross_amount_original = amounts_simplified.line_gross_amount_simplified
