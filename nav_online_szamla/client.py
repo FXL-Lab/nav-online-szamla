@@ -1188,15 +1188,6 @@ class NavOnlineInvoiceClient:
             # For the actual request, we need the raw XML bytes (xsdata will base64-encode it)
             xml_data = serialize_annulment_data_to_xml(annulment_data)
             
-            # Log the annulment XML data being sent
-            print("\n" + "="*80)
-            print(f"🚫 ANNULMENT XML DATA (Index: {index})")
-            print("="*80)
-            print(xml_data)
-            print("="*80)
-            print(f"📋 Base64 Data Length: {len(base64_data)} characters")
-            print("="*80 + "\n")
-            
             operation = AnnulmentOperationType(
                 index=index,
                 annulment_operation=ManageAnnulmentOperationType.ANNUL,
@@ -1251,13 +1242,6 @@ class NavOnlineInvoiceClient:
         try:
             # Serialize request to XML
             xml_request = self._serialize_request_to_xml(request)
-            
-            # Log the complete annulment request XML being sent to NAV
-            print("\n" + "="*80)
-            print("🚫 TECHNICAL ANNULMENT REQUEST XML SENT TO NAV SERVER")
-            print("="*80)
-            print(xml_request)
-            print("="*80 + "\n")
             
             logger.debug(f"Serialized ManageAnnulmentRequest XML: {xml_request}")
             
@@ -1387,13 +1371,6 @@ class NavOnlineInvoiceClient:
             # Serialize and encode invoice data
             xml_data = serialize_invoice_data_to_xml(invoice_data)
             
-            # Log the XML data being sent
-            print("\n" + "="*80)
-            print(f"📋 INVOICE XML DATA (Operation: {operation_type.value}, Index: {index})")
-            print("="*80)
-            print(xml_data)
-            print("="*80)
-            
             base64_data = encode_invoice_data_to_base64(xml_data)
             
             # Calculate electronic invoice hash for electronic invoices
@@ -1403,10 +1380,6 @@ class NavOnlineInvoiceClient:
                 value=electronic_hash,
                 crypto_type="SHA3-512"
             )
-            
-            print(f"📋 Electronic Invoice Hash: {electronic_hash}")
-            print(f"📋 Base64 Data Length: {len(base64_data)} characters")
-            print("="*80 + "\n")
             
             # Create invoice operation
             operation = InvoiceOperationType(
@@ -1470,13 +1443,6 @@ class NavOnlineInvoiceClient:
         try:
             # Serialize request to XML
             xml_request = self._serialize_request_to_xml(request)
-            
-            # Log the complete request XML being sent to NAV
-            print("\n" + "="*80)
-            print("🚀 COMPLETE REQUEST XML SENT TO NAV SERVER")
-            print("="*80)
-            print(xml_request)
-            print("="*80 + "\n")
             
             # Make API call
             with self.http_client as client:
