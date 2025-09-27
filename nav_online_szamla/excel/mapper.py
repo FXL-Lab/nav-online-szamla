@@ -38,6 +38,98 @@ class ExcelFieldMapper:
     Handles bidirectional mapping between InvoiceData objects and Excel row structures.
     """
     
+    # Value replacement mappings for proper localization
+    VALUE_REPLACEMENTS = {
+        # Boolean values
+        'boolean_hu': {
+            True: 'Igen',
+            False: 'Nem',
+            'true': 'Igen',
+            'false': 'Nem',
+            'TRUE': 'Igen',
+            'FALSE': 'Nem',
+        },
+        
+        # Customer VAT status
+        'customer_vat_status': {
+            'DOMESTIC': 'Belföldi ÁFA alany',
+            'PRIVATE_PERSON': 'Nem ÁFA alany (belföldi vagy külföldi) természetes személy',
+            'OTHER': 'Egyéb (belföldi nem ÁFA alany, nem természetes személy, külföldi Áfa alany és külföldi nem ÁFA alany, nem természetes személy)'
+        },
+        
+        # Payment methods
+        'payment_method': {
+            'TRANSFER': 'Banki átutalás',
+            'CASH': 'Készpénz',
+            'CARD': 'Bankkártya, hitelkártya, egyéb készpénz helyettesítő eszköz',
+        },
+        
+        # Invoice categories
+        'invoice_category': {
+            'NORMAL': 'Normál',
+            'SIMPLIFIED': 'Egyszerűsített',
+            'AGGREGATE': 'Gyűjtőszámla'
+        },
+        
+        # Line operations
+        'line_operation': {
+            'CREATE': 'Új sor felvétele',
+            'MODIFY': 'Sor módosítás',
+            'DELETE': 'Sor törlés'
+        },
+        
+        # VAT exemption cases
+        'vat_exemption_case': {
+            'AAM': 'Alanyi adómentes',
+            'TAM': 'Tárgyi adómentes ill. a tevékenység közérdekű vagy speciális jellegére tekintettel adómentes',
+            'KBAET': 'Adómentes Közösségen belüli termékértékesítés, új közlekedési eszköz nélkül',
+            'KBAUK': 'Adómentes Közösségen belüli új közlekedési eszköz értékesítés',
+            'EAM': 'Adómentes termékértékesítés a Közösség területén kívülre (termékexport harmadik országba)',
+            'NAM': 'Egyéb nemzetközi ügyletekhez kapcsolódó jogcímen megállapított adómentesség',
+            'UNKNOWN': '3.0 előtti számlára hivatkozó, illetve előzmény nélküli módosító és sztornó számlák esetén használható'
+        },
+        
+        # VAT out of scope cases
+        'vat_out_of_scope_case': {
+            'ATK': 'Áfa tárgyi hatályán kívül',
+            'EUFAD37': 'Áfa tv. 37. §-a alapján másik tagállamban teljesített, fordítottan adózó ügylet',
+            'EUFADE': 'Másik tagállamban teljesített, nem az Áfa tv. 37. §-a alá tartozó, fordítottan adózó ügylet',
+            'EUE': 'Másik tagállamban teljesített, nem fordítottan adózó ügylet',
+            'HO': 'Harmadik országban teljesített ügylet',
+            'UNKNOWN': '3.0 előtti számlára hivatkozó, illetve előzmény nélküli módosító és sztornó számlák esetén használható'
+        },
+        
+        # Tax base deviation cases
+        'tax_base_deviation_case': {
+            'REFUNDABLE_VAT': 'Az áfa felszámítása a 11. vagy 14. § alapján történt és az áfát a számla címzettjének meg kell térítenie',
+            'NONREFUNDABLE_VAT': 'Az áfa felszámítása a 11. vagy 14. § alapján történt és az áfát a számla címzettjének nem kell megtérítenie',
+            'UNKNOWN': '3.0 előtti számlára hivatkozó, illetve előzmény nélküli módosító és sztornó számlák esetén használható'
+        },
+        
+        # Margin scheme indicators
+        'margin_scheme': {
+            'TRAVEL_AGENCY': 'Utazási irodák',
+            'SECOND_HAND': 'Használt cikkek',
+            'ARTWORK': 'Műalkotások',
+            'ANTIQUES': 'Gyűjteménydarabok és régiségek'
+        }
+    }
+    
+    @classmethod
+    def _apply_value_replacement(cls, value, replacement_type: str):
+        """Apply value replacement based on type with proper defaults."""
+        # Handle None values with appropriate defaults based on type
+        if value is None:
+            # Only set default for cash_accounting_indicator, not for other boolean fields
+            if replacement_type == 'boolean_hu':
+                # For most boolean fields, None should remain None (becomes nan in Excel)
+                # Only set default to 'Nem' for specific fields that need it
+                return None
+            return None
+            
+        replacements = cls.VALUE_REPLACEMENTS.get(replacement_type, {})
+        return replacements.get(value, value)
+    
     # Column mappings constants for tests
     HEADER_COLUMN_MAPPINGS = {
         'Számla sorszáma': 'invoice_number',
@@ -416,7 +508,9 @@ class ExcelFieldMapper:
             # Basic invoice data
             row.invoice_number = invoice_data.invoice_number
             row.invoice_issue_date = cls._parse_date(invoice_data.invoice_issue_date)
-            row.completeness_indicator = invoice_data.completeness_indicator
+            row.completeness_indicator = cls._apply_value_replacement(
+                invoice_data.completeness_indicator, 'boolean_hu'
+            )
             
             # Get the main invoice object
             if not invoice_data.invoice_main or not invoice_data.invoice_main.invoice:
@@ -537,7 +631,10 @@ class ExcelFieldMapper:
         if head.customer_info:
             customer = head.customer_info
             row.buyer_name = customer.customer_name
-            row.buyer_vat_status = customer.customer_vat_status.value if customer.customer_vat_status else None
+            row.buyer_vat_status = cls._apply_value_replacement(
+                customer.customer_vat_status.value if customer.customer_vat_status else None,
+                'customer_vat_status'
+            )
             
             # Extract community VAT number and third state tax ID from customer_vat_data
             if customer.customer_vat_data:
@@ -563,12 +660,27 @@ class ExcelFieldMapper:
         # Other head fields
         row.fulfillment_date = cls._parse_date(head.invoice_detail.invoice_delivery_date)
         row.payment_due_date = cls._parse_date(head.invoice_detail.payment_date) 
-        row.payment_method = head.invoice_detail.payment_method.value if head.invoice_detail.payment_method else None
+        row.payment_method = cls._apply_value_replacement(
+            head.invoice_detail.payment_method.value if head.invoice_detail.payment_method else None,
+            'payment_method'
+        )
         row.invoice_currency = head.invoice_detail.currency_code
         row.exchange_rate = head.invoice_detail.exchange_rate
-        row.small_business_indicator = head.invoice_detail.small_business_indicator
-        row.cash_accounting_indicator = head.invoice_detail.cash_accounting_indicator
-        row.invoice_category = head.invoice_detail.invoice_category.value if head.invoice_detail.invoice_category else None
+        row.small_business_indicator = cls._apply_value_replacement(
+            head.invoice_detail.small_business_indicator, 'boolean_hu'
+        )
+        # Cash accounting indicator should default to 'Nem' when None
+        cash_accounting_value = head.invoice_detail.cash_accounting_indicator
+        if cash_accounting_value is None:
+            row.cash_accounting_indicator = 'Nem'
+        else:
+            row.cash_accounting_indicator = cls._apply_value_replacement(
+                cash_accounting_value, 'boolean_hu'
+            )
+        row.invoice_category = cls._apply_value_replacement(
+            head.invoice_detail.invoice_category.value if head.invoice_detail.invoice_category else None,
+            'invoice_category'
+        )
 
     @classmethod
     def _map_invoice_summary_to_header(cls, summary: SummaryType, row: InvoiceHeaderRow) -> None:
@@ -578,11 +690,15 @@ class ExcelFieldMapper:
             row.net_amount_huf = summary.summary_normal.invoice_net_amount_huf
             row.vat_amount_original = summary.summary_normal.invoice_vat_amount
             row.vat_amount_huf = summary.summary_normal.invoice_vat_amount_huf
-            # Calculate gross amounts from net + vat
-            if row.net_amount_original and row.vat_amount_original:
-                row.gross_amount_original = row.net_amount_original + row.vat_amount_original
-            if row.net_amount_huf and row.vat_amount_huf:
-                row.gross_amount_huf = row.net_amount_huf + row.vat_amount_huf
+            
+            # Calculate gross amounts from net + vat with proper defaults
+            net_orig = row.net_amount_original or 0
+            vat_orig = row.vat_amount_original or 0
+            row.gross_amount_original = net_orig + vat_orig
+            
+            net_huf = row.net_amount_huf or 0
+            vat_huf = row.vat_amount_huf or 0
+            row.gross_amount_huf = net_huf + vat_huf
 
     @classmethod
     def _map_invoice_reference_to_header(cls, reference: InvoiceReferenceType, row: InvoiceHeaderRow) -> None:
@@ -603,7 +719,10 @@ class ExcelFieldMapper:
         
         # Line modification reference
         if line.line_modification_reference:
-            row.line_modification_type = line.line_modification_reference.line_operation.value if line.line_modification_reference.line_operation else None
+            row.line_modification_type = cls._apply_value_replacement(
+                line.line_modification_reference.line_operation.value if line.line_modification_reference.line_operation else None,
+                'line_operation'
+            )
             row.modified_line_number = line.line_modification_reference.line_number_reference
         
         # Quantities and prices
@@ -618,8 +737,14 @@ class ExcelFieldMapper:
         if hasattr(line, 'line_delivery_date') and line.line_delivery_date:
             row.line_fulfillment_date = cls._parse_date(line.line_delivery_date)
         
-        # Advance payment indicator
-        row.advance_payment_indicator = getattr(line, 'advance_payment_indicator', None)
+        # Advance payment indicator - default to 'Nem' when None
+        advance_payment_value = getattr(line, 'advance_payment_indicator', None)
+        if advance_payment_value is None:
+            row.advance_payment_indicator = 'Nem'
+        else:
+            row.advance_payment_indicator = cls._apply_value_replacement(
+                advance_payment_value, 'boolean_hu'
+            )
         
         # Handle normal amounts (most common case)
         if line.line_amounts_normal:
@@ -648,32 +773,48 @@ class ExcelFieldMapper:
                 
             # VAT exemption information
             if hasattr(vat_rate_info, 'vat_exemption') and vat_rate_info.vat_exemption:
-                row.vat_exemption_indicator = True
-                row.vat_exemption_case = vat_rate_info.vat_exemption.case.value if vat_rate_info.vat_exemption.case else None
+                row.vat_exemption_indicator = cls._apply_value_replacement(True, 'boolean_hu')
+                row.vat_exemption_case = cls._apply_value_replacement(
+                    vat_rate_info.vat_exemption.case.value if vat_rate_info.vat_exemption.case else None,
+                    'vat_exemption_case'
+                )
                 row.vat_exemption_reason = vat_rate_info.vat_exemption.reason
                 
             # Out of scope VAT
             if hasattr(vat_rate_info, 'vat_out_of_scope') and vat_rate_info.vat_out_of_scope:
-                row.out_of_scope_indicator = True
-                row.out_of_scope_case = vat_rate_info.vat_out_of_scope.case.value if vat_rate_info.vat_out_of_scope.case else None
+                row.out_of_scope_indicator = cls._apply_value_replacement(True, 'boolean_hu')
+                row.out_of_scope_case = cls._apply_value_replacement(
+                    vat_rate_info.vat_out_of_scope.case.value if vat_rate_info.vat_out_of_scope.case else None,
+                    'vat_out_of_scope_case'
+                )
                 row.out_of_scope_reason = vat_rate_info.vat_out_of_scope.reason
                 
             # Domestic reverse charge
             if hasattr(vat_rate_info, 'domestic_reverse_charge') and vat_rate_info.domestic_reverse_charge:
-                row.domestic_reverse_charge_indicator = True
+                row.domestic_reverse_charge_indicator = cls._apply_value_replacement(True, 'boolean_hu')
                 
             # Margin scheme
             if hasattr(vat_rate_info, 'margin_scheme_vat') and vat_rate_info.margin_scheme_vat:
-                row.margin_scheme_with_vat = True
-                row.margin_scheme_indicator = vat_rate_info.margin_scheme_vat.value if hasattr(vat_rate_info.margin_scheme_vat, 'value') else None
+                row.margin_scheme_with_vat = cls._apply_value_replacement(True, 'boolean_hu')
+                row.margin_scheme_indicator = cls._apply_value_replacement(
+                    vat_rate_info.margin_scheme_vat.value if hasattr(vat_rate_info.margin_scheme_vat, 'value') else None,
+                    'margin_scheme'
+                )
                 
             if hasattr(vat_rate_info, 'margin_scheme_no_vat') and vat_rate_info.margin_scheme_no_vat:
-                row.margin_scheme_without_vat = True
-                row.margin_scheme_indicator = vat_rate_info.margin_scheme_no_vat.value if hasattr(vat_rate_info.margin_scheme_no_vat, 'value') else None
+                row.margin_scheme_without_vat = cls._apply_value_replacement(True, 'boolean_hu')
+                row.margin_scheme_indicator = cls._apply_value_replacement(
+                    vat_rate_info.margin_scheme_no_vat.value if hasattr(vat_rate_info.margin_scheme_no_vat, 'value') else None,
+                    'margin_scheme'
+                )
                 
-            # No VAT charge (section 17)
-            if hasattr(vat_rate_info, 'no_vat_charge'):
-                row.no_vat_charge_indicator = vat_rate_info.no_vat_charge
+            # No VAT charge (section 17) - leave as None/nan for now
+            # This field will be set only when explicitly needed
+            # if hasattr(vat_rate_info, 'no_vat_charge') and vat_rate_info.no_vat_charge:
+            #     row.no_vat_charge_indicator = cls._apply_value_replacement(
+            #         vat_rate_info.no_vat_charge, 'boolean_hu'
+            #     )
+            # If no_vat_charge is False or doesn't exist, leave as None (becomes nan)
                 
         # VAT amounts
         if amounts_normal.line_vat_data:
