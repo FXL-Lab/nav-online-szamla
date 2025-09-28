@@ -1095,9 +1095,8 @@ class NavOnlineInvoiceClient:
                             processed_count += 1
 
                             # Show progress more frequently for larger datasets
-                            if processed_count % 5 == 0 or processed_count == len(invoice_digests):
+                            if processed_count % 50 == 0 or processed_count == len(invoice_digests):
                                 logger.info(f"📊 Progress: {processed_count}/{len(invoice_digests)} invoices processed ({processed_count/len(invoice_digests)*100:.1f}%)")
-                                print(f"📊 Progress: {processed_count}/{len(invoice_digests)} invoices processed ({processed_count/len(invoice_digests)*100:.1f}%)")
                         else:
                             failed_count += 1
 
@@ -1118,7 +1117,7 @@ class NavOnlineInvoiceClient:
                         processed_count += 1
 
                         # Show progress more frequently for larger datasets
-                        if processed_count % 5 == 0 or processed_count == len(invoice_digests):
+                        if processed_count % 50 == 0 or processed_count == len(invoice_digests):
                             logger.info(f"📊 Progress: {processed_count}/{len(invoice_digests)} invoices processed ({processed_count/len(invoice_digests)*100:.1f}%)")
                     else:
                         failed_count += 1

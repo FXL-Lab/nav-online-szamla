@@ -90,14 +90,14 @@ class ExcelFieldMapper:
         },
         
         # VAT out of scope cases
-        'vat_out_of_scope_case': {
-            'ATK': 'Áfa tárgyi hatályán kívül',
-            'EUFAD37': 'Áfa tv. 37. §-a alapján másik tagállamban teljesített, fordítottan adózó ügylet',
-            'EUFADE': 'Másik tagállamban teljesített, nem az Áfa tv. 37. §-a alá tartozó, fordítottan adózó ügylet',
-            'EUE': 'Másik tagállamban teljesített, nem fordítottan adózó ügylet',
-            'HO': 'Harmadik országban teljesített ügylet',
-            'UNKNOWN': '3.0 előtti számlára hivatkozó, illetve előzmény nélküli módosító és sztornó számlák esetén használható'
-        },
+        # 'vat_out_of_scope_case': {
+        #     'ATK': 'Áfa tárgyi hatályán kívül',
+        #     'EUFAD37': 'Áfa tv. 37. §-a alapján másik tagállamban teljesített, fordítottan adózó ügylet',
+        #     'EUFADE': 'Másik tagállamban teljesített, nem az Áfa tv. 37. §-a alá tartozó, fordítottan adózó ügylet',
+        #     'EUE': 'Másik tagállamban teljesített, nem fordítottan adózó ügylet',
+        #     'HO': 'Harmadik országban teljesített ügylet',
+        #     'UNKNOWN': '3.0 előtti számlára hivatkozó, illetve előzmény nélküli módosító és sztornó számlák esetén használható'
+        # },
         
         # Tax base deviation cases
         'tax_base_deviation_case': {
@@ -884,7 +884,9 @@ class ExcelFieldMapper:
         # No VAT charge (section 17) - check for the indicator AND actual VAT amount
         if hasattr(vat_rate_info, 'no_vat_charge') and vat_rate_info.no_vat_charge:
             # Only set the indicator if there's truly no VAT charged (amount is 0 or None)
-            if vat_rate_info.vat_percentage is None or vat_rate_info.vat_percentage == 0:
+            is_vat_out_of_scope = hasattr(vat_rate_info, 'vat_out_of_scope') and vat_rate_info.vat_out_of_scope is not None
+            has_vat_percentage =  vat_rate_info.vat_percentage is not None and vat_rate_info.vat_percentage != 0
+            if not has_vat_percentage and not is_vat_out_of_scope:
                 row.no_vat_charge_indicator = cls._apply_value_replacement(
                     True, 'boolean_hu'
                 )
