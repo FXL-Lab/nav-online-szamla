@@ -836,7 +836,7 @@ class ExcelFieldMapper:
                 
             # Out of scope VAT
             if hasattr(vat_rate_info, 'vat_out_of_scope') and vat_rate_info.vat_out_of_scope:
-                row.out_of_scope_indicator = cls._apply_value_replacement(True, 'boolean_hu')
+                row.out_of_scope_indicator = None # TODO never see as True
                 
                 # Handle both enum and string values for out of scope case
                 out_of_scope_case = vat_rate_info.vat_out_of_scope.case if vat_rate_info.vat_out_of_scope.case else None
