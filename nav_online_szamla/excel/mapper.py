@@ -690,18 +690,9 @@ class ExcelFieldMapper:
             row.net_amount_huf = summary.summary_normal.invoice_net_amount_huf
             row.vat_amount_original = summary.summary_normal.invoice_vat_amount
             row.vat_amount_huf = summary.summary_normal.invoice_vat_amount_huf
-            
-            # Calculate gross amounts from net + vat only if both values exist
-            if row.net_amount_original is not None and row.vat_amount_original is not None:
-                row.gross_amount_original = row.net_amount_original + row.vat_amount_original
-            elif row.net_amount_original is not None and row.vat_amount_original is None:
-                row.gross_amount_original = row.net_amount_original  # Gross = Net when no VAT
-            
-            if row.net_amount_huf is not None and row.vat_amount_huf is not None:
-                row.gross_amount_huf = row.net_amount_huf + row.vat_amount_huf
-            elif row.net_amount_huf is not None and row.vat_amount_huf is None:
-                row.gross_amount_huf = row.net_amount_huf  # Gross = Net when no VAT
-                
+            row.gross_amount_original = summary.summary_gross_data.invoice_gross_amount
+            row.gross_amount_huf = summary.summary_gross_data.invoice_gross_amount_huf
+
         elif summary.summary_simplified:
             # For simplified invoices, sum up all gross amounts across VAT rates
             total_gross_original = Decimal('0')
@@ -723,6 +714,7 @@ class ExcelFieldMapper:
             row.net_amount_huf = None
             row.vat_amount_original = None
             row.vat_amount_huf = None
+        
 
     @classmethod
     def _map_invoice_reference_to_header(cls, reference: InvoiceReferenceType, row: InvoiceHeaderRow) -> None:
