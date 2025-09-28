@@ -221,6 +221,8 @@ class InvoiceExcelExporter:
                 data.append(self._header_row_to_dict(row))
             
             df = pd.DataFrame(data)
+            # Replace all None/NaN values with 'n/a'
+            df = df.fillna('n/a')
             # Rename columns to Hungarian
             df = df.rename(columns=header_columns)
             
@@ -290,6 +292,8 @@ class InvoiceExcelExporter:
                 data.append(self._line_row_to_dict(row))
             
             df = pd.DataFrame(data)
+            # Replace all None/NaN values with 'n/a'
+            df = df.fillna('n/a')
             # Rename columns to Hungarian  
             df = df.rename(columns=lines_columns)
             
