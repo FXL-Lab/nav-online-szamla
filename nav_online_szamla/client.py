@@ -104,6 +104,7 @@ from .utils import (
     decode_exchange_token,
     encode_annulment_data_to_base64,
     serialize_annulment_data_to_xml,
+    split_date_range,
     # Additional utility functions used in methods
     serialize_invoice_data_to_xml, 
     encode_invoice_data_to_base64,
@@ -1162,13 +1163,117 @@ class NavOnlineInvoiceClient:
         if start_date >= end_date:
             raise NavValidationException("Start date must be before end date")
 
-        # Validate date range is not too large
+        # Check if date range needs to be split
         date_diff = (end_date - start_date).days
         if date_diff > MAX_DATE_RANGE_DAYS:
-            raise NavValidationException(
-                f"Date range too large. Maximum allowed: {MAX_DATE_RANGE_DAYS} days"
+            logger.info(
+                f"Date range ({date_diff} days) exceeds maximum ({MAX_DATE_RANGE_DAYS} days). "
+                "Splitting into smaller ranges."
+            )
+            
+            # Split date range into chunks
+            date_ranges = split_date_range(
+                start_date.strftime("%Y-%m-%d"),
+                end_date.strftime("%Y-%m-%d"),
+                MAX_DATE_RANGE_DAYS
+            )
+            
+            logger.info(f"Split into {len(date_ranges)} date ranges")
+            
+            # Phase 1: Collect ALL invoice digests from ALL date ranges
+            all_invoice_digests = []
+            for i, (range_start_str, range_end_str) in enumerate(date_ranges):
+                logger.info(
+                    f"Collecting digests from range {i+1}/{len(date_ranges)}: "
+                    f"{range_start_str} to {range_end_str}"
+                )
+                
+                # Collect digests for this date range
+                range_digests = self._collect_invoice_digests_for_range(
+                    range_start_str, range_end_str, invoice_direction
+                )
+                all_invoice_digests.extend(range_digests)
+                logger.info(f"Found {len(range_digests)} invoices in range {i+1}")
+            
+            if not all_invoice_digests:
+                logger.info("No invoices found in any of the date ranges")
+                return []
+                
+            logger.info(f"🎯 Collected total of {len(all_invoice_digests)} invoice digests from all ranges")
+            
+            # Phase 2: Process all collected invoice digests to get complete invoice data
+            all_invoice_data = self._process_invoice_digests(
+                invoice_digests=all_invoice_digests,
+                invoice_direction=invoice_direction,
+                use_threading=use_threading,
+                max_workers=max_workers
             )
 
+            logger.info(
+                f"Completed processing all {len(date_ranges)} date ranges. "
+                f"Total invoices processed: {len(all_invoice_data)}"
+            )
+            return all_invoice_data
+
+        # For single date range (≤ 35 days), use the original logic
+        return self._get_invoice_data_for_single_range(
+            start_date, end_date, invoice_direction, use_threading, max_workers
+        )
+
+    def _collect_invoice_digests_for_range(
+        self, 
+        start_date_str: str, 
+        end_date_str: str, 
+        invoice_direction: InvoiceDirectionType
+    ) -> list:
+        """Collect all invoice digests for a specific date range."""
+        invoice_digests = []
+        page = 1
+
+        while True:
+            # Create invoice query params
+            invoice_query_params = InvoiceQueryParamsType(
+                mandatory_query_params=MandatoryQueryParamsType(
+                    invoice_issue_date=DateIntervalParamType(
+                        date_from=start_date_str,
+                        date_to=end_date_str,
+                    )
+                )
+            )
+
+            # Query invoice digests
+            digest_response = self.query_invoice_digest(
+                page=page,
+                invoice_direction=invoice_direction,
+                invoice_query_params=invoice_query_params
+            )
+
+            if not digest_response.invoice_digest_result or not digest_response.invoice_digest_result.invoice_digest:
+                break
+
+            page_digests = digest_response.invoice_digest_result.invoice_digest
+            invoice_digests.extend(page_digests)
+
+            # Check if there are more pages
+            if (
+                digest_response.invoice_digest_result.available_page is None
+                or page >= digest_response.invoice_digest_result.available_page
+            ):
+                break
+
+            page += 1
+
+        return invoice_digests
+
+    def _get_invoice_data_for_single_range(
+        self,
+        start_date: datetime,
+        end_date: datetime,
+        invoice_direction: InvoiceDirectionType,
+        use_threading: bool,
+        max_workers: int
+    ) -> List[tuple[InvoiceData, ManageInvoiceOperationType]]:
+        """Get invoice data for a single date range (≤ 35 days)."""
         # Validate max_workers if threading is enabled
         if use_threading and (max_workers < 1 or max_workers > 20):
             raise NavValidationException("max_workers must be between 1 and 20")
@@ -1249,7 +1354,7 @@ class NavOnlineInvoiceClient:
             raise
         except Exception as e:
             logger.error(
-                f"Unexpected error in get_all_invoice_data_for_date_range: {str(e)}"
+                f"Unexpected error in _get_invoice_data_for_single_range: {str(e)}"
             )
             raise NavApiException(
                 f"Unexpected error during data retrieval: {str(e)}"
