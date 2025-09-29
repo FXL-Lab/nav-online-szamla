@@ -773,13 +773,13 @@ class ExcelFieldMapper:
             row.line_fulfillment_date = cls._parse_date(line.line_delivery_date)
         
         # Advance payment indicator - leave as None when not specified (should be nan in expected results)
-        advance_payment_value = getattr(line, 'advance_payment_indicator', None)
+        advance_payment_value = getattr(line, 'advance_indicator', None)
         if advance_payment_value is not None and advance_payment_value is True:
             row.advance_payment_indicator = cls._apply_value_replacement(
                 advance_payment_value, 'boolean_hu'
             )
         else:
-            row.advance_payment_indicator = None  # Leave as None (becomes nan in Excel)
+            row.advance_payment_indicator = None
         
         # Handle normal amounts (most common case)
         if line.line_amounts_normal:
