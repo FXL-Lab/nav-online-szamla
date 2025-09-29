@@ -14,7 +14,7 @@ from nav_online_szamla.models.invoice_data import (
     InvoiceMainType, InvoiceType, InvoiceHeadType, SupplierInfoType,
     CustomerInfoType, LinesType, LineType, SummaryType, InvoiceDetailType,
     CustomerVatDataType, CustomerTaxNumberType, LineAmountsNormalType,
-    SummaryNormalType
+    SummaryNormalType, SummaryGrossDataType
 )
 from nav_online_szamla.models.invoice_base import TaxNumberType, AddressType, SimpleAddressType
 
@@ -107,8 +107,13 @@ class TestExcelFieldMapper:
             invoice_vat_amount_huf=Decimal("540.0"),
             summary_by_vat_rate=[]
         )
+        summary_gross_data = SummaryGrossDataType(
+            invoice_gross_amount=Decimal("2540.0"),
+            invoice_gross_amount_huf=Decimal("2540.0")
+        )
         summary = SummaryType(
-            summary_normal=summary_normal
+            summary_normal=summary_normal,
+            summary_gross_data=summary_gross_data
         )
 
         # Create main invoice structure

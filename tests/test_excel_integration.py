@@ -17,7 +17,7 @@ from nav_online_szamla.models import InvoiceData, ManageInvoiceOperationType
 from nav_online_szamla.models.invoice_data import (
     InvoiceMainType, InvoiceType, InvoiceHeadType, SupplierInfoType,
     CustomerInfoType, LinesType, LineType, SummaryType, InvoiceDetailType,
-    CustomerVatDataType, CustomerTaxNumberType, SummaryNormalType
+    CustomerVatDataType, CustomerTaxNumberType, SummaryNormalType, SummaryGrossDataType
 )
 from nav_online_szamla.models.invoice_base import TaxNumberType, AddressType, SimpleAddressType
 
@@ -121,8 +121,13 @@ class TestExcelIntegration:
                 invoice_vat_amount_huf=total_vat,
                 summary_by_vat_rate=[]
             )
+            summary_gross_data = SummaryGrossDataType(
+                invoice_gross_amount=total_gross,
+                invoice_gross_amount_huf=total_gross
+            )
             summary = SummaryType(
-                summary_normal=summary_normal
+                summary_normal=summary_normal,
+                summary_gross_data=summary_gross_data
             )
 
             # Create main invoice structure
