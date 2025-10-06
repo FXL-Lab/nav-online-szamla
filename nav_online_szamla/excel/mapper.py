@@ -1468,6 +1468,133 @@ class ExcelFieldMapper:
         return VatRateType(vat_percentage=Decimal('0.0'))
 
     @classmethod
+    def _create_vat_rate_from_line_row(cls, row: InvoiceLineRow, is_simplified: bool = False) -> VatRateType:
+        """
+        Create a VatRateType object directly from an InvoiceLineRow.
+        
+        This method consolidates the VAT rate creation logic to avoid duplication
+        between line-level and summary-level processing.
+        
+        Args:
+            row: Invoice line row containing VAT information
+            is_simplified: Whether this is for a simplified invoice
+            
+        Returns:
+            VatRateType: Properly configured VAT rate object
+        """
+        # Handle no VAT charge (EU transactions)
+        if row.no_vat_charge_indicator:
+            line_vat_rate = VatRateType()
+            line_vat_rate.no_vat_charge = True
+            # Manually ensure other init=False fields are not serialized
+            try:
+                delattr(line_vat_rate, 'vat_domestic_reverse_charge')
+            except AttributeError:
+                line_vat_rate.vat_domestic_reverse_charge = None
+            return line_vat_rate
+        
+        # Handle out of scope VAT
+        # line.out_of_scope_indicator or line.out_of_scope_case
+        elif row.out_of_scope_indicator or row.out_of_scope_case:
+            out_of_scope_reason = DetailedReasonType(
+                case=row.out_of_scope_case.strip(),
+                reason=row.out_of_scope_reason or ""
+            )
+            line_vat_rate = VatRateType(
+                vat_percentage=None,
+                vat_content=None,
+                vat_exemption=None,
+                vat_out_of_scope=out_of_scope_reason,
+                margin_scheme_indicator=None,
+                vat_amount_mismatch=None
+            )
+            # Manually override the init=False fields to prevent them from being serialized
+            object.__setattr__(line_vat_rate, 'vat_domestic_reverse_charge', None)
+            object.__setattr__(line_vat_rate, 'no_vat_charge', None)
+            return line_vat_rate
+        
+        # Handle VAT exemption
+        elif row.vat_exemption_indicator or row.vat_exemption_case:
+            exemption_reason = DetailedReasonType(
+                case=row.vat_exemption_case.strip(),
+                reason=row.vat_exemption_reason or ""
+            )
+            line_vat_rate = VatRateType(
+                vat_percentage=None,
+                vat_content=None,
+                vat_exemption=exemption_reason,
+                vat_out_of_scope=None,
+                margin_scheme_indicator=None,
+                vat_amount_mismatch=None
+            )
+            object.__setattr__(line_vat_rate, 'vat_domestic_reverse_charge', None)
+            object.__setattr__(line_vat_rate, 'no_vat_charge', None)
+            return line_vat_rate
+        
+        # Handle VAT content (for simplified invoices or when explicitly provided)
+        elif row.vat_content is not None:
+            try:
+                # Convert string to Decimal first
+                if isinstance(row.vat_content, str):
+                    vat_content_decimal = Decimal(row.vat_content.strip())
+                else:
+                    vat_content_decimal = Decimal(str(row.vat_content))
+                
+                # Normalize using the existing function
+                vat_content_value = cls._normalize_vat_percentage(vat_content_decimal)
+                
+                line_vat_rate = VatRateType(
+                    vat_percentage=None,
+                    vat_content=vat_content_value,
+                    vat_exemption=None,
+                    vat_out_of_scope=None,
+                    margin_scheme_indicator=None,
+                    vat_amount_mismatch=None
+                )
+                # Manually ensure other init=False fields are not serialized
+                object.__setattr__(line_vat_rate, 'vat_domestic_reverse_charge', None)
+                object.__setattr__(line_vat_rate, 'no_vat_charge', None)
+                return line_vat_rate
+            except (ValueError, TypeError, ArithmeticError) as e:
+                logger.warning(f"Invalid vat_content value: {row.vat_content}, error: {e}, using 0.0")
+                # Fall through to use vat_rate or default
+        
+        # Handle standard VAT percentage
+        if row.vat_rate is not None:
+            normalized_vat_rate = cls._normalize_vat_percentage(row.vat_rate)
+            # For simplified invoices, use vatContent instead of vatPercentage
+            if is_simplified:
+                line_vat_rate = VatRateType(
+                    vat_percentage=None,
+                    vat_content=normalized_vat_rate,
+                    vat_exemption=None,
+                    vat_out_of_scope=None,
+                    margin_scheme_indicator=None,
+                    vat_amount_mismatch=None
+                )
+                object.__setattr__(line_vat_rate, 'vat_domestic_reverse_charge', None)
+                object.__setattr__(line_vat_rate, 'no_vat_charge', None)
+                return line_vat_rate
+            else:
+                return VatRateType(vat_percentage=normalized_vat_rate)
+        
+        # Default fallback - use 0% VAT
+        if is_simplified:
+            line_vat_rate = VatRateType(
+                vat_percentage=None,
+                vat_content=Decimal("0.0"),
+                vat_exemption=None,
+                vat_out_of_scope=None,
+                margin_scheme_indicator=None,
+                vat_amount_mismatch=None
+            )
+            object.__setattr__(line_vat_rate, 'vat_domestic_reverse_charge', None)
+            object.__setattr__(line_vat_rate, 'no_vat_charge', None)
+            return line_vat_rate
+        else:
+            return VatRateType(vat_percentage=Decimal('0.0'))
+
+    @classmethod
     def _build_invoice_reference_from_row(cls, row: InvoiceHeaderRow) -> InvoiceReferenceType:
         """Build InvoiceReferenceType from header row data."""
         return InvoiceReferenceType(
@@ -1521,90 +1648,8 @@ class ExcelFieldMapper:
         if is_simplified:
             # For simplified invoices, use LineAmountsSimplified structure
             if row.gross_amount_original is not None:
-                # Create VAT rate (required for simplified invoices)
-                line_vat_rate = None
-                if row.no_vat_charge_indicator and row.no_vat_charge_indicator is True:
-                    # No VAT charged under Section 17 of VAT law (EU transactions)
-                    line_vat_rate = VatRateType()
-                    line_vat_rate.no_vat_charge = True
-                    # Try to unset the default vat_domestic_reverse_charge to prevent XML serialization
-                    try:
-                        delattr(line_vat_rate, 'vat_domestic_reverse_charge')
-                    except AttributeError:
-                        # If we can't delete it, try setting it to None
-                        line_vat_rate.vat_domestic_reverse_charge = None
-                elif row.out_of_scope_case and row.out_of_scope_case.strip().upper() == 'ATK':
-                    # Outside VAT scope (Áfa tárgyi hatályán kívül) - only VAT rate, no VAT amount
-                    out_of_scope_reason = DetailedReasonType(
-                        case=row.out_of_scope_case.strip(),  # "ATK"
-                        reason=row.out_of_scope_reason or "Áfa tárgyi hatályán kívül"  # #TODO: Default reason
-                    )
-                    # Create VatRateType with only the out-of-scope field, avoid default boolean fields
-                    line_vat_rate = VatRateType(
-                        vat_percentage=None,
-                        vat_content=None,
-                        vat_exemption=None,
-                        vat_out_of_scope=out_of_scope_reason,
-                        margin_scheme_indicator=None,
-                        vat_amount_mismatch=None
-                    )
-                    # Manually override the init=False fields to prevent them from being serialized
-                    object.__setattr__(line_vat_rate, 'vat_domestic_reverse_charge', None)
-                    object.__setattr__(line_vat_rate, 'no_vat_charge', None)
-                elif row.vat_rate is not None:
-                    # For simplified invoices, use vatContent instead of vatPercentage
-                    normalized_vat_rate = cls._normalize_vat_percentage(row.vat_rate)
-                    line_vat_rate = VatRateType(vat_content=normalized_vat_rate)
-                elif row.vat_content is not None:
-                    # Use VAT content directly from Excel data for simplified invoices
-                    try:
-                        # Convert string to Decimal first
-                        if isinstance(row.vat_content, str):
-                            vat_content_decimal = Decimal(row.vat_content.strip())
-                        else:
-                            vat_content_decimal = Decimal(str(row.vat_content))
-                        
-                        # Normalize using the existing function
-                        vat_content_value = cls._normalize_vat_percentage(vat_content_decimal)
-                        
-                        # For simplified invoices, create a clean VatRateType with only vat_content
-                        line_vat_rate = VatRateType(
-                            vat_percentage=None,
-                            vat_content=vat_content_value,
-                            vat_exemption=None,
-                            vat_out_of_scope=None,
-                            margin_scheme_indicator=None,
-                            vat_amount_mismatch=None
-                        )
-                        # Manually ensure other init=False fields are not serialized
-                        object.__setattr__(line_vat_rate, 'vat_domestic_reverse_charge', None)
-                        object.__setattr__(line_vat_rate, 'no_vat_charge', None)
-                    except (ValueError, TypeError, ArithmeticError) as e:
-                        logger.warning(f"Invalid vat_content value: {row.vat_content}, error: {e}, using 0.0")
-                        line_vat_rate = VatRateType(
-                            vat_percentage=None,
-                            vat_content=Decimal("0.0"),
-                            vat_exemption=None,
-                            vat_out_of_scope=None,
-                            margin_scheme_indicator=None,
-                            vat_amount_mismatch=None
-                        )
-                        # Manually ensure other init=False fields are not serialized
-                        object.__setattr__(line_vat_rate, 'vat_domestic_reverse_charge', None)
-                        object.__setattr__(line_vat_rate, 'no_vat_charge', None)
-                else:
-                    # If no VAT rate or content is explicitly provided, use 0% VAT content for simplified invoices
-                    line_vat_rate = VatRateType(
-                        vat_percentage=None,
-                        vat_content=Decimal("0.0"),
-                        vat_exemption=None,
-                        vat_out_of_scope=None,
-                        margin_scheme_indicator=None,
-                        vat_amount_mismatch=None
-                    )
-                    # Manually ensure other init=False fields are not serialized
-                    object.__setattr__(line_vat_rate, 'vat_domestic_reverse_charge', None)
-                    object.__setattr__(line_vat_rate, 'no_vat_charge', None)
+                # Create VAT rate using the consolidated helper method
+                line_vat_rate = cls._create_vat_rate_from_line_row(row, is_simplified=True)
                 
                 line_amounts_simplified = LineAmountsSimplifiedType(
                     line_vat_rate=line_vat_rate,
@@ -1622,45 +1667,11 @@ class ExcelFieldMapper:
                         line_net_amount_huf=row.net_amount_huf
                     )
                 
-                # VAT data
-                line_vat_rate = None
-                line_vat_data = None
+                # VAT rate - use the consolidated helper method
+                line_vat_rate = cls._create_vat_rate_from_line_row(row, is_simplified=False)
                 
-                # Handle VAT rate according to Hungarian VAT law
-                if row.no_vat_charge_indicator and row.no_vat_charge_indicator is True:
-                    # No VAT charged under Section 17 of VAT law (EU transactions)
-                    line_vat_rate = VatRateType()
-                    line_vat_rate.no_vat_charge = True
-                    # Try to unset the default vat_domestic_reverse_charge to prevent XML serialization
-                    try:
-                        delattr(line_vat_rate, 'vat_domestic_reverse_charge')
-                    except AttributeError:
-                        # If we can't delete it, try setting it to None
-                        line_vat_rate.vat_domestic_reverse_charge = None
-                elif row.out_of_scope_case and row.out_of_scope_case.strip().upper() == 'ATK':
-                    # Outside VAT scope (Áfa tárgyi hatályán kívül) - only VAT rate, no VAT amount
-                    out_of_scope_reason = DetailedReasonType(
-                        case=row.out_of_scope_case.strip(),  # "ATK"
-                        reason=row.out_of_scope_reason or "Áfa tárgyi hatályán kívül"  # #TODO: Default reason
-                    )
-                    # Create VatRateType with only the out-of-scope field, avoid default boolean fields
-                    line_vat_rate = VatRateType(
-                        vat_percentage=None,
-                        vat_content=None,
-                        vat_exemption=None,
-                        vat_out_of_scope=out_of_scope_reason,
-                        margin_scheme_indicator=None,
-                        vat_amount_mismatch=None
-                    )
-                    # Manually override the init=False fields to prevent them from being serialized
-                    object.__setattr__(line_vat_rate, 'vat_domestic_reverse_charge', None)
-                    object.__setattr__(line_vat_rate, 'no_vat_charge', None)
-                elif row.vat_rate is not None:
-                    # Standard VAT percentage
-                    normalized_vat_rate = cls._normalize_vat_percentage(row.vat_rate)
-                    line_vat_rate = VatRateType(vat_percentage=normalized_vat_rate)
-                    
-                # Only include VAT amount data if NOT out of VAT scope
+                # VAT data - only include VAT amount data if NOT out of VAT scope
+                line_vat_data = None
                 if (row.vat_amount_original is not None or row.vat_amount_huf is not None) and \
                    not (row.out_of_scope_case and row.out_of_scope_case.strip().upper() == 'ATK'):
                     line_vat_data = LineVatDataType(
