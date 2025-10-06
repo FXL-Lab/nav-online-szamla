@@ -1246,20 +1246,43 @@ class ExcelFieldMapper:
             summary_simplified_list = []
             
             vat_rate_groups = cls._group_lines_by_vat_rate(line_rows)
-            for vat_key, lines_in_group in vat_rate_groups.items():
-                # Aggregate amounts for this VAT rate group
-                total_gross = sum(line.gross_amount_original or Decimal("0") for line in lines_in_group)
-                total_gross_huf = sum(line.gross_amount_huf or Decimal("0") for line in lines_in_group)
-                
-                if vat_key[0] == 'vat_content' and vat_key[1] is not None:
-                    vat_rate = cls._create_vat_rate_from_key(vat_key)
-                else:
-                    raise Exception(f"We expect vat_content key for simplified invoices, got: {vat_key}, values: {vat_key[1]}")
+            
+            if vat_rate_groups:
+                # If we have line rows, aggregate by VAT rate
+                for vat_key, lines_in_group in vat_rate_groups.items():
+                    # Aggregate amounts for this VAT rate group
+                    total_gross = sum(line.gross_amount_original or Decimal("0") for line in lines_in_group)
+                    total_gross_huf = sum(line.gross_amount_huf or Decimal("0") for line in lines_in_group)
+                    
+                    if vat_key[0] == 'vat_content' and vat_key[1] is not None:
+                        vat_rate = cls._create_vat_rate_from_key(vat_key)
+                    else:
+                        raise Exception(f"We expect vat_content key for simplified invoices, got: {vat_key}, values: {vat_key[1]}")
 
+                    summary_simplified = SummarySimplifiedType(
+                        vat_rate=vat_rate,
+                        vat_content_gross_amount=total_gross,
+                        vat_content_gross_amount_huf=total_gross_huf
+                    )
+                    summary_simplified_list.append(summary_simplified)
+            else:
+                # No line rows provided, create a default entry from header data
+                # Assume standard VAT rate for simplified invoices
+                default_vat_rate = VatRateType(
+                    vat_percentage=None,
+                    vat_content=Decimal("0.27"),  # Default 27% VAT content for Hungary
+                    vat_exemption=None,
+                    vat_out_of_scope=None,
+                    margin_scheme_indicator=None,
+                    vat_amount_mismatch=None
+                )
+                object.__setattr__(default_vat_rate, 'vat_domestic_reverse_charge', None)
+                object.__setattr__(default_vat_rate, 'no_vat_charge', None)
+                
                 summary_simplified = SummarySimplifiedType(
-                    vat_rate=vat_rate,
-                    vat_content_gross_amount=total_gross,
-                    vat_content_gross_amount_huf=total_gross_huf
+                    vat_rate=default_vat_rate,
+                    vat_content_gross_amount=row.gross_amount_original or Decimal("0"),
+                    vat_content_gross_amount_huf=row.gross_amount_huf or Decimal("0")
                 )
                 summary_simplified_list.append(summary_simplified)
 
@@ -1278,32 +1301,56 @@ class ExcelFieldMapper:
             summary_by_vat_rate_list = []
             
             vat_rate_groups = cls._group_lines_by_vat_rate(line_rows)
-            for vat_key, lines_in_group in vat_rate_groups.items():
-                # Aggregate amounts for this VAT rate group
-                total_net = sum(line.net_amount_original or Decimal("0") for line in lines_in_group)
-                total_net_huf = sum(line.net_amount_huf or Decimal("0") for line in lines_in_group)
-                total_vat = sum(line.vat_amount_original or Decimal("0") for line in lines_in_group)
-                total_vat_huf = sum(line.vat_amount_huf or Decimal("0") for line in lines_in_group)
-                total_gross = sum(line.gross_amount_original or Decimal("0") for line in lines_in_group)
-                total_gross_huf = sum(line.gross_amount_huf or Decimal("0") for line in lines_in_group)
+            
+            if vat_rate_groups:
+                # If we have line rows, aggregate by VAT rate
+                for vat_key, lines_in_group in vat_rate_groups.items():
+                    # Aggregate amounts for this VAT rate group
+                    total_net = sum(line.net_amount_original or Decimal("0") for line in lines_in_group)
+                    total_net_huf = sum(line.net_amount_huf or Decimal("0") for line in lines_in_group)
+                    total_vat = sum(line.vat_amount_original or Decimal("0") for line in lines_in_group)
+                    total_vat_huf = sum(line.vat_amount_huf or Decimal("0") for line in lines_in_group)
+                    total_gross = sum(line.gross_amount_original or Decimal("0") for line in lines_in_group)
+                    total_gross_huf = sum(line.gross_amount_huf or Decimal("0") for line in lines_in_group)
+                    
+                    # Create VatRateType from the VAT key
+                    vat_rate = cls._create_vat_rate_from_key(vat_key)
+                    
+                    # Create the summary entry for this VAT rate
+                    summary_by_vat_rate = SummaryByVatRateType(
+                        vat_rate=vat_rate,
+                        vat_rate_net_data=VatRateNetDataType(
+                            vat_rate_net_amount=total_net,
+                            vat_rate_net_amount_huf=total_net_huf
+                        ),
+                        vat_rate_vat_data=VatRateVatDataType(
+                            vat_rate_vat_amount=total_vat,
+                            vat_rate_vat_amount_huf=total_vat_huf
+                        ),
+                        vat_rate_gross_data=VatRateGrossDataType(
+                            vat_rate_gross_amount=total_gross,
+                            vat_rate_gross_amount_huf=total_gross_huf
+                        )
+                    )
+                    summary_by_vat_rate_list.append(summary_by_vat_rate)
+            else:
+                # No line rows provided, create a default entry from header data
+                # Assume standard 27% VAT rate for Hungary
+                default_vat_rate = VatRateType(vat_percentage=Decimal("0.27"))
                 
-                # Create VatRateType from the VAT key
-                vat_rate = cls._create_vat_rate_from_key(vat_key)
-                
-                # Create the summary entry for this VAT rate
                 summary_by_vat_rate = SummaryByVatRateType(
-                    vat_rate=vat_rate,
+                    vat_rate=default_vat_rate,
                     vat_rate_net_data=VatRateNetDataType(
-                        vat_rate_net_amount=total_net,
-                        vat_rate_net_amount_huf=total_net_huf
+                        vat_rate_net_amount=row.net_amount_original or Decimal("0"),
+                        vat_rate_net_amount_huf=row.net_amount_huf or Decimal("0")
                     ),
                     vat_rate_vat_data=VatRateVatDataType(
-                        vat_rate_vat_amount=total_vat,
-                        vat_rate_vat_amount_huf=total_vat_huf
+                        vat_rate_vat_amount=row.vat_amount_original or Decimal("0"),
+                        vat_rate_vat_amount_huf=row.vat_amount_huf or Decimal("0")
                     ),
                     vat_rate_gross_data=VatRateGrossDataType(
-                        vat_rate_gross_amount=total_gross,
-                        vat_rate_gross_amount_huf=total_gross_huf
+                        vat_rate_gross_amount=row.gross_amount_original or Decimal("0"),
+                        vat_rate_gross_amount_huf=row.gross_amount_huf or Decimal("0")
                     )
                 )
                 summary_by_vat_rate_list.append(summary_by_vat_rate)
@@ -1325,17 +1372,21 @@ class ExcelFieldMapper:
             )
 
     @classmethod
-    def _group_lines_by_vat_rate(cls, line_rows: List[InvoiceLineRow]) -> dict:
+    def _group_lines_by_vat_rate(cls, line_rows: Optional[List[InvoiceLineRow]]) -> dict:
         """
         Group invoice lines by their VAT rate characteristics.
         
         Args:
-            line_rows: List of invoice line rows
+            line_rows: List of invoice line rows (can be None)
             
         Returns:
             dict: Dictionary with VAT rate key as key and list of lines as value
         """
         groups = {}
+        
+        # Handle None or empty list case
+        if not line_rows:
+            return groups
         
         for line in line_rows:
             # Create a key that uniquely identifies the VAT rate characteristics
