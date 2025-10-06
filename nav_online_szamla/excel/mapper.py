@@ -13,7 +13,7 @@ from typing import Optional, List, Tuple, Union
 from ..models import InvoiceData, ManageInvoiceOperationType
 from ..models.invoice_data import (
     InvoiceType, InvoiceHeadType, SupplierInfoType, CustomerInfoType,
-    LineType, VatRateType, LineVatDataType, LinesType,
+    LineType, VatRateGrossDataType, VatRateType, LineVatDataType, LinesType,
     SummaryType, SummaryNormalType, SummaryByVatRateType, InvoiceReferenceType, InvoiceMainType,
     LineNetAmountDataType, LineGrossAmountDataType,
     LineAmountsNormalType, LineOperationType,
@@ -21,7 +21,7 @@ from ..models.invoice_data import (
     InvoiceDetailType, LineModificationReferenceType,
     VatRateNetDataType, VatRateVatDataType,
     CustomerTaxNumberType, CustomerVatDataType, SummarySimplifiedType,
-    DetailedReasonType, LineAmountsSimplifiedType
+    DetailedReasonType, LineAmountsSimplifiedType, SummaryGrossDataType
 )
 from ..models.invoice_base import (
     TaxNumberType, AddressType, SimpleAddressType,
@@ -1242,121 +1242,69 @@ class ExcelFieldMapper:
         if is_simplified:
             # For simplified invoices, use SummarySimplified structure
             # Calculate VAT content from header amounts, consistent with line-level logic
-            vat_rate = None
+
+            summary_simplified_list = []
             
-            # Debug logging to see what values we're working with
-            logger.debug(f"Header amounts - VAT: {row.vat_amount_original}, Gross: {row.gross_amount_original}, Net: {row.net_amount_original}")
-            
-            if row.vat_amount_original and row.gross_amount_original and row.vat_amount_original > 0:
-                # Calculate VAT content as ratio: VAT_amount / gross_amount  
-                vat_content_ratio = row.vat_amount_original / row.gross_amount_original
-                logger.debug(f"Calculated VAT content ratio: {vat_content_ratio}")
-                vat_rate = VatRateType(
-                    vat_percentage=None,
-                    vat_content=vat_content_ratio,
-                    vat_exemption=None,
-                    vat_out_of_scope=None,
-                    margin_scheme_indicator=None,
-                    vat_amount_mismatch=None
+            vat_rate_groups = cls._group_lines_by_vat_rate(line_rows)
+            for vat_key, lines_in_group in vat_rate_groups.items():
+                # Aggregate amounts for this VAT rate group
+                total_gross = sum(line.gross_amount_original or Decimal("0") for line in lines_in_group)
+                total_gross_huf = sum(line.gross_amount_huf or Decimal("0") for line in lines_in_group)
+                
+                if vat_key[0] == 'vat_content' and vat_key[1] is not None:
+                    vat_rate = cls._create_vat_rate_from_key(vat_key)
+                else:
+                    raise Exception(f"We expect vat_content key for simplified invoices, got: {vat_key}, values: {vat_key[1]}")
+
+                summary_simplified = SummarySimplifiedType(
+                    vat_rate=vat_rate,
+                    vat_content_gross_amount=total_gross,
+                    vat_content_gross_amount_huf=total_gross_huf
                 )
-                # Manually ensure other init=False fields are not serialized
-                object.__setattr__(vat_rate, 'vat_domestic_reverse_charge', None)
-                object.__setattr__(vat_rate, 'no_vat_charge', None)
-            elif row.gross_amount_original and row.net_amount_original:
-                # Alternative calculation: (gross - net) / gross = VAT content
-                vat_amount = row.gross_amount_original - row.net_amount_original
-                vat_content_ratio = vat_amount / row.gross_amount_original if row.gross_amount_original > 0 else Decimal("0.0")
-                logger.debug(f"Alternative VAT content calculation - VAT amount: {vat_amount}, ratio: {vat_content_ratio}")
-                vat_rate = VatRateType(
-                    vat_percentage=None,
-                    vat_content=vat_content_ratio,
-                    vat_exemption=None,
-                    vat_out_of_scope=None,
-                    margin_scheme_indicator=None,
-                    vat_amount_mismatch=None
-                )
-                # Manually ensure other init=False fields are not serialized
-                object.__setattr__(vat_rate, 'vat_domestic_reverse_charge', None)
-                object.__setattr__(vat_rate, 'no_vat_charge', None)
-            else:
-                # For 0% VAT or missing VAT data, use 0% VAT content
-                logger.debug("Using 0% VAT content - no valid amounts found")
-                vat_rate = VatRateType(
-                    vat_percentage=None,
-                    vat_content=Decimal("0.0"),
-                    vat_exemption=None,
-                    vat_out_of_scope=None,
-                    margin_scheme_indicator=None,
-                    vat_amount_mismatch=None
-                )
-                # Manually ensure other init=False fields are not serialized
-                object.__setattr__(vat_rate, 'vat_domestic_reverse_charge', None)
-                object.__setattr__(vat_rate, 'no_vat_charge', None)
-            
-            summary_simplified = SummarySimplifiedType(
-                vat_rate=vat_rate,
-                vat_content_gross_amount=row.gross_amount_original,
-                vat_content_gross_amount_huf=row.gross_amount_huf
+                summary_simplified_list.append(summary_simplified)
+
+            summary_gross = SummaryGrossDataType(
+                invoice_gross_amount=row.gross_amount_original,
+                invoice_gross_amount_huf=row.gross_amount_huf
             )
             
             return SummaryType(
-                summary_simplified=[summary_simplified]  # Note: it's a list
+                summary_simplified=summary_simplified_list,
+                summary_gross_data=summary_gross
             )
         else:
             # For normal invoices, use SummaryNormal structure
             # If line rows are provided, aggregate by VAT rate, otherwise use header data
             summary_by_vat_rate_list = []
             
-            if line_rows and len(line_rows) > 0:
-                # Group lines by VAT rate and create separate SummaryByVatRateType for each
-                vat_rate_groups = cls._group_lines_by_vat_rate(line_rows)
+            vat_rate_groups = cls._group_lines_by_vat_rate(line_rows)
+            for vat_key, lines_in_group in vat_rate_groups.items():
+                # Aggregate amounts for this VAT rate group
+                total_net = sum(line.net_amount_original or Decimal("0") for line in lines_in_group)
+                total_net_huf = sum(line.net_amount_huf or Decimal("0") for line in lines_in_group)
+                total_vat = sum(line.vat_amount_original or Decimal("0") for line in lines_in_group)
+                total_vat_huf = sum(line.vat_amount_huf or Decimal("0") for line in lines_in_group)
+                total_gross = sum(line.gross_amount_original or Decimal("0") for line in lines_in_group)
+                total_gross_huf = sum(line.gross_amount_huf or Decimal("0") for line in lines_in_group)
                 
-                for vat_key, lines_in_group in vat_rate_groups.items():
-                    # Aggregate amounts for this VAT rate group
-                    total_net = sum(line.net_amount_original or Decimal("0") for line in lines_in_group)
-                    total_net_huf = sum(line.net_amount_huf or Decimal("0") for line in lines_in_group)
-                    total_vat = sum(line.vat_amount_original or Decimal("0") for line in lines_in_group)
-                    total_vat_huf = sum(line.vat_amount_huf or Decimal("0") for line in lines_in_group)
-                    
-                    # Create VatRateType from the VAT key
-                    vat_rate = cls._create_vat_rate_from_key(vat_key, lines_in_group[0])
-                    
-                    # Create the summary entry for this VAT rate
-                    summary_by_vat_rate = SummaryByVatRateType(
-                        vat_rate=vat_rate,
-                        vat_rate_net_data=VatRateNetDataType(
-                            vat_rate_net_amount=total_net,
-                            vat_rate_net_amount_huf=total_net_huf
-                        ),
-                        vat_rate_vat_data=VatRateVatDataType(
-                            vat_rate_vat_amount=total_vat,
-                            vat_rate_vat_amount_huf=total_vat_huf
-                        )
-                    )
-                    summary_by_vat_rate_list.append(summary_by_vat_rate)
-            else:
-                # Fallback to header-based logic when no line data is available
-                vat_rate_net_data = VatRateNetDataType(
-                    vat_rate_net_amount=row.net_amount_original,
-                    vat_rate_net_amount_huf=row.net_amount_huf
-                )
+                # Create VatRateType from the VAT key
+                vat_rate = cls._create_vat_rate_from_key(vat_key)
                 
-                vat_rate_vat_data = VatRateVatDataType(
-                    vat_rate_vat_amount=row.vat_amount_original,
-                    vat_rate_vat_amount_huf=row.vat_amount_huf
-                )
-                
-                # Use the most common VAT rate (0.27 for 27% in Hungary) or handle 0% VAT cases
-                if row.vat_amount_original and row.vat_amount_original > 0:
-                    vat_rate = VatRateType(vat_percentage=Decimal("0.27"))
-                else:
-                    # For 0% VAT, use 0% VAT rate 
-                    vat_rate = VatRateType(vat_percentage=Decimal("0.0"))
-                
+                # Create the summary entry for this VAT rate
                 summary_by_vat_rate = SummaryByVatRateType(
                     vat_rate=vat_rate,
-                    vat_rate_net_data=vat_rate_net_data,
-                    vat_rate_vat_data=vat_rate_vat_data
+                    vat_rate_net_data=VatRateNetDataType(
+                        vat_rate_net_amount=total_net,
+                        vat_rate_net_amount_huf=total_net_huf
+                    ),
+                    vat_rate_vat_data=VatRateVatDataType(
+                        vat_rate_vat_amount=total_vat,
+                        vat_rate_vat_amount_huf=total_vat_huf
+                    ),
+                    vat_rate_gross_data=VatRateGrossDataType(
+                        vat_rate_gross_amount=total_gross,
+                        vat_rate_gross_amount_huf=total_gross_huf
+                    )
                 )
                 summary_by_vat_rate_list.append(summary_by_vat_rate)
             
@@ -1367,8 +1315,13 @@ class ExcelFieldMapper:
                 invoice_vat_amount=row.vat_amount_original,
                 invoice_vat_amount_huf=row.vat_amount_huf
             )
+            summary_gross = SummaryGrossDataType(
+                invoice_gross_amount=row.gross_amount_original,
+                invoice_gross_amount_huf=row.gross_amount_huf
+            )
             return SummaryType(
-                summary_normal=summary_normal
+                summary_normal=summary_normal,
+                summary_gross_data=summary_gross
             )
 
     @classmethod
@@ -1410,11 +1363,11 @@ class ExcelFieldMapper:
             return ('no_vat_charge',)
         
         # Handle out of scope VAT
-        if line.out_of_scope_indicator and line.out_of_scope_case:
+        if line.out_of_scope_indicator or line.out_of_scope_case:
             return ('out_of_scope', line.out_of_scope_case, line.out_of_scope_reason or '')
         
         # Handle VAT exemption
-        if line.vat_exemption_indicator and line.vat_exemption_case:
+        if line.vat_exemption_indicator or line.vat_exemption_case:
             return ('vat_exemption', line.vat_exemption_case, line.vat_exemption_reason or '')
         
         # Handle VAT percentage (most common case)
@@ -1438,7 +1391,7 @@ class ExcelFieldMapper:
         return ('vat_percentage', Decimal('0.0'))
     
     @classmethod
-    def _create_vat_rate_from_key(cls, vat_key: tuple, sample_line: InvoiceLineRow) -> VatRateType:
+    def _create_vat_rate_from_key(cls, vat_key: tuple) -> VatRateType:
         """
         Create a VatRateType object from a VAT rate key and sample line.
         
@@ -1713,6 +1666,11 @@ class ExcelFieldMapper:
                     line_vat_data = LineVatDataType(
                         line_vat_amount=row.vat_amount_original,
                         line_vat_amount_huf=row.vat_amount_huf
+                    )
+                else: 
+                    line_vat_data = LineVatDataType(
+                        line_vat_amount=0,
+                        line_vat_amount_huf=0
                     )
                 
                 # Gross amount data
