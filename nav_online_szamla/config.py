@@ -54,12 +54,13 @@ DEFAULT_HEADERS = {"Content-Type": "application/xml", "Accept": "application/xml
 DEFAULT_TIMEOUT = 30
 
 # Maximum retry attempts for failed API calls
-MAX_RETRY_ATTEMPTS = 3
+MAX_RETRY_ATTEMPTS = 10
 
 # Exponential backoff configuration
-RETRY_BACKOFF_MULTIPLIER = 1
-RETRY_BACKOFF_MIN = 4
-RETRY_BACKOFF_MAX = 10
+# Wait times will be: 4s, 8s, 16s, 32s, 64s, 128s, 256s, 300s, 300s, 300s
+RETRY_BACKOFF_MULTIPLIER = 2  # Exponential growth factor
+RETRY_BACKOFF_MIN = 4  # Start with 4 seconds
+RETRY_BACKOFF_MAX = 300  # Cap at 5 minutes (300 seconds)
 
 # Date range limits
 MAX_DATE_RANGE_DAYS = 35
