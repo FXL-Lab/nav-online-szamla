@@ -8,6 +8,8 @@ to the NAV Online Számla API with proper error handling and retry logic.
 import logging
 from typing import Dict, Any, Optional
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry as Urllib3Retry
 from tenacity import (
     retry,
     stop_after_attempt,
@@ -44,6 +46,24 @@ class NavHttpClient:
         self.timeout = timeout
         self.session = requests.Session()
         self.session.headers.update(DEFAULT_HEADERS)
+        
+        # Configure connection pooling with proper DNS handling
+        # This prevents DNS exhaustion issues in high-volume scenarios
+        adapter = HTTPAdapter(
+            pool_connections=10,  # Number of connection pools to cache
+            pool_maxsize=20,      # Max connections per pool
+            max_retries=0,        # We handle retries with tenacity
+            pool_block=False      # Don't block when pool is full
+        )
+        
+        # Mount adapter for both HTTP and HTTPS
+        self.session.mount('http://', adapter)
+        self.session.mount('https://', adapter)
+        
+        # Set connection keep-alive header to prevent connection exhaustion
+        self.session.headers.update({
+            'Connection': 'keep-alive'
+        })
 
     @retry(
         stop=stop_after_attempt(MAX_RETRY_ATTEMPTS),
