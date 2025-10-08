@@ -112,7 +112,10 @@ from .utils import (
 from .http_client import NavHttpClient
 
 # Excel functionality
-from .excel import InvoiceExcelExporter, InvoiceExcelImporter
+from .excel import InvoiceExcelExporter, InvoiceExcelImporter, StreamingInvoiceExcelExporter
+
+# File storage for streaming operations
+from .file_storage import InvoiceFileStorage
 
 logger = logging.getLogger(__name__)
 
@@ -1134,6 +1137,96 @@ class NavOnlineInvoiceClient:
         
         return all_invoice_data
 
+    def _process_invoice_digests_to_storage(
+        self,
+        invoice_digests: list,
+        invoice_direction: InvoiceDirectionType,
+        file_storage: InvoiceFileStorage,
+        use_threading: bool = False,
+        max_workers: int = 4
+    ) -> Tuple[int, int]:
+        """
+        Process invoice digests and save directly to file storage (memory-efficient).
+        
+        This method fetches invoice details and immediately saves them to disk
+        without keeping them in memory, making it suitable for large datasets.
+        
+        Args:
+            invoice_digests: List of invoice digests from queryInvoiceDigest response
+            invoice_direction: Direction of the invoices (OUTBOUND/INBOUND)
+            file_storage: InvoiceFileStorage instance to save invoices to
+            use_threading: Whether to use threading for parallel processing
+            max_workers: Maximum number of threads (only used if use_threading=True)
+            
+        Returns:
+            Tuple[int, int]: (successfully_processed, failed_count)
+        """
+        if not invoice_digests:
+            return 0, 0
+            
+        logger.info(
+            f"Processing {len(invoice_digests)} invoice digests to file storage "
+            f"(threading: {use_threading})"
+        )
+        
+        processed_count = 0
+        failed_count = 0
+        
+        # Thread-safe counters
+        from threading import Lock
+        counter_lock = Lock()
+        
+        def process_and_save(digest):
+            """Process a single digest and save to storage."""
+            nonlocal processed_count, failed_count
+            
+            try:
+                result = self._process_single_invoice_digest(digest, invoice_direction)
+                
+                if result:
+                    invoice_data, operation_type = result
+                    file_storage.save_invoice(invoice_data, operation_type)
+                    
+                    with counter_lock:
+                        processed_count += 1
+                        
+                        # Show progress
+                        if processed_count % 100 == 0:
+                            logger.info(
+                                f"📊 Progress: {processed_count}/{len(invoice_digests)} "
+                                f"invoices saved to storage ({processed_count/len(invoice_digests)*100:.1f}%)"
+                            )
+                    return True
+                else:
+                    with counter_lock:
+                        failed_count += 1
+                    return False
+                    
+            except Exception as e:
+                logger.error(f"Failed to process and save invoice {digest.invoice_number}: {e}")
+                with counter_lock:
+                    failed_count += 1
+                return False
+        
+        if use_threading:
+            # Use threading for parallel processing
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # Submit all tasks
+                futures = [executor.submit(process_and_save, digest) for digest in invoice_digests]
+                
+                # Wait for completion
+                concurrent.futures.wait(futures)
+        else:
+            # Sequential processing
+            for i, digest in enumerate(invoice_digests, 1):
+                process_and_save(digest)
+        
+        logger.info(
+            f"✅ Completed processing to storage: {processed_count} saved, {failed_count} failed"
+        )
+        
+        return processed_count, failed_count
+
     def get_all_invoice_data_for_date_range(
         self,
         start_date: datetime,
@@ -1907,6 +2000,202 @@ class NavOnlineInvoiceClient:
                 raise
             logger.error(f"Excel export failed: {e}")
             raise NavApiException(f"Failed to export to Excel: {e}")
+
+    def export_invoices_to_excel_streaming(
+        self,
+        start_date: datetime,
+        end_date: datetime,
+        output_file: str,
+        invoice_direction: InvoiceDirectionType = InvoiceDirectionType.OUTBOUND,
+        use_threading: bool = True,
+        max_workers: int = 4,
+        temp_storage_dir: Optional[str] = None
+    ) -> int:
+        """
+        Export invoice data to Excel file using streaming mode (memory-efficient).
+        
+        This method is designed for very large datasets (millions of invoices) where
+        loading all data into memory would cause OOM errors. It works in two phases:
+        
+        Phase 1: Fetch invoice data from NAV and save directly to disk (parallel)
+        Phase 2: Read from disk and write to Excel one-by-one (sequential, memory-efficient)
+        
+        Memory usage: Only ~1-2 invoices in memory at any time, regardless of dataset size.
+        
+        Args:
+            start_date: Start date for the query range
+            end_date: End date for the query range
+            output_file: Path where the Excel file should be saved
+            invoice_direction: Invoice direction to query (default: OUTBOUND)
+            use_threading: Whether to use threading for Phase 1 (default: True for performance)
+            max_workers: Maximum number of threads for parallel processing (default: 4)
+            temp_storage_dir: Directory for temporary storage. If None, auto-creates in ~/.nav_invoice_temp
+            
+        Returns:
+            int: Number of invoices exported
+            
+        Raises:
+            NavValidationException: If parameters are invalid
+            NavApiException: If API requests fail
+            ExcelProcessingException: If Excel export fails
+            ImportError: If xlsxwriter is not installed
+            
+        Example:
+            >>> client = NavOnlineInvoiceClient(credentials)
+            >>> # Export 1 million invoices without OOM
+            >>> count = client.export_invoices_to_excel_streaming(
+            ...     start_date=datetime(2023, 1, 1),
+            ...     end_date=datetime(2024, 12, 31),
+            ...     output_file="invoices_2023_2024.xlsx",
+            ...     use_threading=True,
+            ...     max_workers=4
+            ... )
+            >>> print(f"Exported {count} invoices")
+        """
+        try:
+            logger.info(
+                f"🚀 Starting STREAMING Excel export for date range: "
+                f"{start_date.date()} to {end_date.date()}"
+            )
+            logger.info(
+                f"Memory-efficient mode: invoices will be saved to disk, "
+                f"then written to Excel one-by-one"
+            )
+            
+            # Phase 1: Collect invoice digests and save details to file storage
+            logger.info("=" * 80)
+            logger.info("PHASE 1: Fetching invoice data from NAV and saving to disk")
+            logger.info("=" * 80)
+            
+            # Validate date range
+            if start_date >= end_date:
+                raise NavValidationException("Start date must be before end date")
+            
+            # Check if date range needs to be split
+            date_diff = (end_date - start_date).days
+            
+            # Create file storage with context manager for auto-cleanup
+            with InvoiceFileStorage(temp_storage_dir) as file_storage:
+                logger.info(f"📁 Temporary storage location: {file_storage.base_dir}")
+                
+                if date_diff > MAX_DATE_RANGE_DAYS:
+                    # Split into smaller date ranges
+                    logger.info(
+                        f"Date range ({date_diff} days) exceeds maximum ({MAX_DATE_RANGE_DAYS} days). "
+                        "Splitting into smaller ranges."
+                    )
+                    
+                    date_ranges = split_date_range(
+                        start_date.strftime("%Y-%m-%d"),
+                        end_date.strftime("%Y-%m-%d"),
+                        MAX_DATE_RANGE_DAYS
+                    )
+                    
+                    logger.info(f"Split into {len(date_ranges)} date ranges")
+                    
+                    # Process each date range
+                    total_processed = 0
+                    total_failed = 0
+                    
+                    for i, (range_start_str, range_end_str) in enumerate(date_ranges, 1):
+                        logger.info(f"\n📅 Processing date range {i}/{len(date_ranges)}: {range_start_str} to {range_end_str}")
+                        
+                        # Collect digests for this range
+                        invoice_digests = self._collect_invoice_digests_for_range(
+                            range_start_str, range_end_str, invoice_direction
+                        )
+                        
+                        if invoice_digests:
+                            # Process digests and save to storage
+                            processed, failed = self._process_invoice_digests_to_storage(
+                                invoice_digests=invoice_digests,
+                                invoice_direction=invoice_direction,
+                                file_storage=file_storage,
+                                use_threading=use_threading,
+                                max_workers=max_workers
+                            )
+                            total_processed += processed
+                            total_failed += failed
+                    
+                    logger.info(
+                        f"\n✅ Phase 1 complete: {total_processed} invoices saved to disk, "
+                        f"{total_failed} failed"
+                    )
+                else:
+                    # Single date range
+                    logger.info("Date range fits within maximum, processing as single range")
+                    
+                    # Collect all digests
+                    invoice_digests = self._collect_invoice_digests_for_range(
+                        start_date.strftime("%Y-%m-%d"),
+                        end_date.strftime("%Y-%m-%d"),
+                        invoice_direction
+                    )
+                    
+                    if not invoice_digests:
+                        logger.info("No invoices found to export")
+                        return 0
+                    
+                    # Process digests and save to storage
+                    total_processed, total_failed = self._process_invoice_digests_to_storage(
+                        invoice_digests=invoice_digests,
+                        invoice_direction=invoice_direction,
+                        file_storage=file_storage,
+                        use_threading=use_threading,
+                        max_workers=max_workers
+                    )
+                    
+                    logger.info(
+                        f"✅ Phase 1 complete: {total_processed} invoices saved to disk, "
+                        f"{total_failed} failed"
+                    )
+                
+                # Check storage size
+                storage_size_mb = file_storage.get_storage_size() / (1024 * 1024)
+                logger.info(f"💾 Temporary storage size: {storage_size_mb:.2f} MB")
+                
+                if total_processed == 0:
+                    logger.info("No invoices to export")
+                    return 0
+                
+                # Phase 2: Stream from file storage to Excel
+                logger.info("\n" + "=" * 80)
+                logger.info("PHASE 2: Reading from disk and writing to Excel (streaming)")
+                logger.info("=" * 80)
+                
+                logger.info(
+                    f"📄 Starting streaming Excel export of {total_processed} invoices to {output_file}"
+                )
+                
+                # Create streaming exporter
+                streaming_exporter = StreamingInvoiceExcelExporter()
+                
+                # Export using iterator (memory-efficient)
+                headers_written, lines_written = streaming_exporter.export_to_excel_streaming(
+                    invoice_iterator=file_storage.iterate_invoices(),
+                    file_path=output_file,
+                    include_operation_type=False,
+                    total_count=total_processed
+                )
+                
+                logger.info(
+                    f"\n✅ STREAMING EXPORT COMPLETE!\n"
+                    f"   📊 Invoices exported: {headers_written}\n"
+                    f"   📋 Line items exported: {lines_written}\n"
+                    f"   📁 Output file: {output_file}\n"
+                    f"   💾 File size: {Path(output_file).stat().st_size / (1024*1024):.2f} MB"
+                )
+                
+                # Cleanup happens automatically via context manager
+                logger.info(f"🧹 Cleaning up temporary storage...")
+                
+                return headers_written
+                
+        except Exception as e:
+            if isinstance(e, (NavValidationException, NavApiException)):
+                raise
+            logger.error(f"Streaming Excel export failed: {e}")
+            raise NavApiException(f"Failed to export to Excel (streaming): {e}")
 
     def import_invoices_from_excel(
         self,

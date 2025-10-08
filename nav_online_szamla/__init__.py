@@ -10,6 +10,15 @@ from .client import NavOnlineInvoiceClient
 from .models_legacy import (
     NavCredentials,  # Custom credentials class
 )
+# Import file storage for streaming operations
+from .file_storage import InvoiceFileStorage
+# Import Excel functionality
+from .excel import (
+    InvoiceExcelExporter,
+    InvoiceExcelImporter,
+    StreamingInvoiceExcelExporter,
+    ExcelProcessingException,
+)
 # Import official API models (primary usage)
 from .models import (
     # Response types
@@ -43,6 +52,13 @@ __email__ = "gergo.emmert@fxltech.com"
 __all__ = [
     # Main client
     "NavOnlineInvoiceClient",
+    # File storage for streaming
+    "InvoiceFileStorage",
+    # Excel functionality
+    "InvoiceExcelExporter",
+    "InvoiceExcelImporter",
+    "StreamingInvoiceExcelExporter",
+    "ExcelProcessingException",
     # Models and data classes
     "NavCredentials",
     "InvoiceDirection",
