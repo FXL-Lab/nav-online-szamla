@@ -4,7 +4,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "nav-online-szamla"
-version = "0.0.18"
+version = "0.0.19"
 description = "NAV Online Számla"
 authors = ["Gergo Emmert <gergo.emmert@fxltech.com>"]
 readme = "README.md"
@@ -37,6 +37,7 @@ dotenv = "^0.9.9"
 tenacity = "^9.0.0"
 xsdata = {extras = ["cli"], version = "^25.7"}
 cryptography = "^41.0.0"
+xlsxwriter = "^3.2.9"
 
 [tool.poetry.group.test.dependencies]
 pytest = "^8.4.1"
