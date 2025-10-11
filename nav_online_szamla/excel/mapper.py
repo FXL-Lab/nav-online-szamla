@@ -690,8 +690,20 @@ class ExcelFieldMapper:
             row.net_amount_huf = summary.summary_normal.invoice_net_amount_huf
             row.vat_amount_original = summary.summary_normal.invoice_vat_amount
             row.vat_amount_huf = summary.summary_normal.invoice_vat_amount_huf
-            row.gross_amount_original = summary.summary_gross_data.invoice_gross_amount
-            row.gross_amount_huf = summary.summary_gross_data.invoice_gross_amount_huf
+            
+            # Handle gross amount - first try to get from summary_gross_data, then calculate
+            if summary.summary_gross_data and hasattr(summary.summary_gross_data, 'invoice_gross_amount'):
+                row.gross_amount_original = summary.summary_gross_data.invoice_gross_amount
+                row.gross_amount_huf = summary.summary_gross_data.invoice_gross_amount_huf
+            else:
+                # Calculate gross amount as net + VAT when summary_gross_data is not available
+                net_amount = summary.summary_normal.invoice_net_amount or Decimal('0')
+                vat_amount = summary.summary_normal.invoice_vat_amount or Decimal('0')
+                net_amount_huf = summary.summary_normal.invoice_net_amount_huf or Decimal('0')
+                vat_amount_huf = summary.summary_normal.invoice_vat_amount_huf or Decimal('0')
+                
+                row.gross_amount_original = net_amount + vat_amount if (net_amount or vat_amount) else None
+                row.gross_amount_huf = net_amount_huf + vat_amount_huf if (net_amount_huf or vat_amount_huf) else None
 
         elif summary.summary_simplified:
             # For simplified invoices, sum up all gross amounts across VAT rates
