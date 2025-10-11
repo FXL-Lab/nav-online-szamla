@@ -159,10 +159,8 @@ class NavOnlineInvoiceClient:
         self.validate_credentials(credentials)
         self.credentials = credentials
         
-        # Use environment-based URL
         self.environment = environment or get_default_environment()
         self.base_url = ENVIRONMENT_URLS[self.environment]
-        
         self.timeout = timeout
         self.http_client = NavHttpClient(self.base_url, timeout)
         
@@ -171,18 +169,27 @@ class NavOnlineInvoiceClient:
         self.xml_serializer = XmlSerializer(context=self.xml_context)
         self.xml_parser = XmlParser(context=self.xml_context)
         
+        # Validate credentials by testing API connectivity
+        try:
+            self.get_token()
+            logger.info(f"Credentials validated successfully for user {credentials.login} in {self.environment.value} environment")
+        except NavApiException as e:
+            raise NavValidationException(f"Credential validation failed: {str(e)}")
+        except Exception as e:
+            raise NavValidationException(f"Unable to validate credentials due to network/API error: {str(e)}")
+        
         # Log environment information for debugging
         logger.info(f"Initialized NAV client for {self.environment.value} environment: {self.base_url}")
 
     def validate_credentials(self, credentials: NavCredentials) -> None:
         """
-        Validate NAV API credentials.
+        Validate NAV API credentials format.
 
         Args:
             credentials: NAV API credentials
 
         Raises:
-            NavValidationException: If credentials are invalid
+            NavValidationException: If credentials format is invalid
         """
         if not all([credentials.login, credentials.password, credentials.signer_key]):
             raise NavValidationException(
