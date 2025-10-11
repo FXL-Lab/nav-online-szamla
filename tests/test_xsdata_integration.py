@@ -146,7 +146,7 @@ class TestXsdataIntegration:
     def test_query_invoice_data_success(self):
         """Test successful invoice data query using xsdata."""
         credentials = self._get_test_credentials()
-        client = NavOnlineInvoiceClient(credentials)
+        client = NavOnlineInvoiceClient(credentials, validate_api=False)
 
         with requests_mock.Mocker() as m:
             # Mock the API response
@@ -182,7 +182,7 @@ class TestXsdataIntegration:
     def test_query_invoice_data_validation_error(self):
         """Test invoice data query with validation error."""
         credentials = self._get_test_credentials()
-        client = NavOnlineInvoiceClient(credentials)
+        client = NavOnlineInvoiceClient(credentials, validate_api=False)
 
         # Test with empty invoice number (should raise ValidationError)
         with pytest.raises(NavValidationException, match="Invoice number is required"):
@@ -194,7 +194,7 @@ class TestXsdataIntegration:
     def test_query_invoice_data_invoice_not_found(self):
         """Test handling when invoice is not found."""
         credentials = self._get_test_credentials()
-        client = NavOnlineInvoiceClient(credentials)
+        client = NavOnlineInvoiceClient(credentials, validate_api=False)
 
         # Response with no invoice data
         no_data_response = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -229,7 +229,7 @@ class TestXsdataIntegration:
     def test_parse_response_from_xml_generic_function(self):
         """Test the generic XML parsing function."""
         credentials = self._get_test_credentials()
-        client = NavOnlineInvoiceClient(credentials)
+        client = NavOnlineInvoiceClient(credentials, validate_api=False)
 
         # Test successful parsing
         response = client._parse_response_from_xml(
@@ -244,7 +244,7 @@ class TestXsdataIntegration:
     def test_parse_response_from_xml_with_api_error(self):
         """Test generic parsing function with API error response."""
         credentials = self._get_test_credentials()
-        client = NavOnlineInvoiceClient(credentials)
+        client = NavOnlineInvoiceClient(credentials, validate_api=False)
 
         with pytest.raises(NavApiException, match="API Error: INVOICE_NOT_FOUND"):
             client._parse_response_from_xml(
@@ -255,7 +255,7 @@ class TestXsdataIntegration:
     def test_parse_response_from_xml_with_invalid_xml(self):
         """Test generic parsing function with invalid XML."""
         credentials = self._get_test_credentials()
-        client = NavOnlineInvoiceClient(credentials)
+        client = NavOnlineInvoiceClient(credentials, validate_api=False)
 
         invalid_xml = "This is not valid XML content"
 
@@ -265,7 +265,7 @@ class TestXsdataIntegration:
     def test_create_query_invoice_data_request(self):
         """Test request creation using xsdata dataclasses."""
         credentials = self._get_test_credentials()
-        client = NavOnlineInvoiceClient(credentials)
+        client = NavOnlineInvoiceClient(credentials, validate_api=False)
 
         # Test request creation
         request = client.create_query_invoice_data_request(
@@ -291,7 +291,7 @@ class TestXsdataIntegration:
     def test_serialize_request_to_xml(self):
         """Test XML serialization functionality."""
         credentials = self._get_test_credentials()
-        client = NavOnlineInvoiceClient(credentials)
+        client = NavOnlineInvoiceClient(credentials, validate_api=False)
 
         # Create a request
         request = client.create_query_invoice_data_request(
@@ -320,7 +320,7 @@ class TestXsdataIntegration:
     def test_query_invoice_digest_success(self):
         """Test successful invoice digest query using xsdata."""
         credentials = self._get_test_credentials()
-        client = NavOnlineInvoiceClient(credentials)
+        client = NavOnlineInvoiceClient(credentials, validate_api=False)
 
         with requests_mock.Mocker() as m:
             # Mock the API response
@@ -370,7 +370,7 @@ class TestXsdataIntegration:
     def test_query_invoice_digest_validation_error(self):
         """Test validation error when page is invalid."""
         credentials = self._get_test_credentials()
-        client = NavOnlineInvoiceClient(credentials)
+        client = NavOnlineInvoiceClient(credentials, validate_api=False)
 
         # Create valid query parameters
         date_interval = DateIntervalParamType(
@@ -396,7 +396,7 @@ class TestXsdataIntegration:
     def test_query_invoice_digest_missing_params(self):
         """Test validation error when query params are missing."""
         credentials = self._get_test_credentials()
-        client = NavOnlineInvoiceClient(credentials)
+        client = NavOnlineInvoiceClient(credentials, validate_api=False)
 
         with pytest.raises(NavValidationException, match="Invoice query parameters are required"):
             client.query_invoice_digest(
@@ -408,7 +408,7 @@ class TestXsdataIntegration:
     def test_create_query_invoice_digest_request(self):
         """Test digest request creation using xsdata dataclasses."""
         credentials = self._get_test_credentials()
-        client = NavOnlineInvoiceClient(credentials)
+        client = NavOnlineInvoiceClient(credentials, validate_api=False)
 
         # Create query parameters
         date_interval = DateIntervalParamType(
@@ -446,7 +446,7 @@ class TestXsdataIntegration:
     def test_serialize_digest_request_to_xml(self):
         """Test XML serialization of digest requests with actual generated XML structure."""
         credentials = self._get_test_credentials()
-        client = NavOnlineInvoiceClient(credentials)
+        client = NavOnlineInvoiceClient(credentials, validate_api=False)
 
         # Create query parameters
         date_interval = DateIntervalParamType(
@@ -507,7 +507,7 @@ class TestXsdataIntegration:
     def test_digest_request_xml_structure_detailed(self):
         """Test detailed XML structure verification with actual generated XML."""
         credentials = self._get_test_credentials()
-        client = NavOnlineInvoiceClient(credentials)
+        client = NavOnlineInvoiceClient(credentials, validate_api=False)
 
         # Create query parameters with specific date range
         date_interval = DateIntervalParamType(

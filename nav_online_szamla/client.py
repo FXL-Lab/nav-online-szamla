@@ -134,7 +134,8 @@ class NavOnlineInvoiceClient:
         self, 
         credentials: NavCredentials, 
         environment: Optional[NavEnvironment] = None,
-        timeout: int = 30
+        timeout: int = 30,
+        validate_api: bool = True
     ):
         """
         Initialize the NAV API client.
@@ -144,6 +145,7 @@ class NavOnlineInvoiceClient:
             environment: Environment to use (TEST or PRODUCTION). If None, uses environment 
                         variable NAV_ENVIRONMENT or defaults to PRODUCTION
             timeout: Request timeout in seconds
+            validate_api: Whether to validate credentials against NAV API. Set to False for unit tests.
             
         Examples:
             # Use production environment (default)
@@ -151,6 +153,9 @@ class NavOnlineInvoiceClient:
             
             # Use test environment
             client = NavOnlineInvoiceClient(credentials, environment=NavEnvironment.TEST)
+            
+            # Skip API validation for unit tests
+            client = NavOnlineInvoiceClient(credentials, validate_api=False)
             
             # Use environment variable NAV_ENVIRONMENT=test
             os.environ['NAV_ENVIRONMENT'] = 'test'
@@ -169,14 +174,17 @@ class NavOnlineInvoiceClient:
         self.xml_serializer = XmlSerializer(context=self.xml_context)
         self.xml_parser = XmlParser(context=self.xml_context)
         
-        # Validate credentials by testing API connectivity
-        try:
-            self.get_token()
-            logger.info(f"Credentials validated successfully for user {credentials.login} in {self.environment.value} environment")
-        except NavApiException as e:
-            raise NavValidationException(f"Credential validation failed: {str(e)}")
-        except Exception as e:
-            raise NavValidationException(f"Unable to validate credentials due to network/API error: {str(e)}")
+        # Validate credentials by testing API connectivity (unless disabled for tests)
+        if validate_api:
+            try:
+                self.get_token()
+                logger.info(f"Credentials validated successfully for user {credentials.login} in {self.environment.value} environment")
+            except NavApiException as e:
+                raise NavValidationException(f"Credential validation failed: {str(e)}")
+            except Exception as e:
+                raise NavValidationException(f"Unable to validate credentials due to network/API error: {str(e)}")
+        else:
+            logger.debug(f"API validation skipped for user {credentials.login} in {self.environment.value} environment")
         
         # Log environment information for debugging
         logger.info(f"Initialized NAV client for {self.environment.value} environment: {self.base_url}")

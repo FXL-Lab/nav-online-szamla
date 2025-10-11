@@ -38,7 +38,7 @@ class TestNavOnlineInvoiceClient:
     def test_client_initialization_default(self):
         """Test client initialization with default settings."""
         credentials = self._get_test_credentials()
-        client = NavOnlineInvoiceClient(credentials)
+        client = NavOnlineInvoiceClient(credentials, validate_api=False)
 
         assert (
             client.base_url == "https://api.onlineszamla.nav.gov.hu/invoiceService/v3"
@@ -48,21 +48,21 @@ class TestNavOnlineInvoiceClient:
     def test_client_initialization_custom_url(self):
         """Test client initialization with test environment."""
         credentials = self._get_test_credentials()
-        client = NavOnlineInvoiceClient(credentials, environment=NavEnvironment.TEST)
+        client = NavOnlineInvoiceClient(credentials, environment=NavEnvironment.TEST, validate_api=False)
 
         assert client.base_url == "https://api-test.onlineszamla.nav.gov.hu/invoiceService/v3"
 
     def test_client_initialization_custom_timeout(self):
         """Test client initialization with custom timeout."""
         credentials = self._get_test_credentials()
-        client = NavOnlineInvoiceClient(credentials, timeout=60)
+        client = NavOnlineInvoiceClient(credentials, timeout=60, validate_api=False)
 
         # Timeout should be set properly for the http_client
         assert client.http_client is not None
 
     def test_token_exchange_success(self, sample_credentials):
         """Test successful token exchange."""
-        client = NavOnlineInvoiceClient(sample_credentials)
+        client = NavOnlineInvoiceClient(sample_credentials, validate_api=False)
 
         # Mock XML response matching TokenExchangeResponse structure
         xml_response = """<?xml version="1.0" encoding="UTF-8"?>
@@ -104,7 +104,7 @@ class TestNavOnlineInvoiceClient:
 
     def test_token_exchange_failure(self, sample_credentials):
         """Test token exchange failure."""
-        client = NavOnlineInvoiceClient(sample_credentials)
+        client = NavOnlineInvoiceClient(sample_credentials, validate_api=False)
 
         # Mock XML error response
         xml_error_response = """<?xml version="1.0" encoding="UTF-8"?>
@@ -144,7 +144,7 @@ class TestNavOnlineInvoiceClient:
 
     def test_query_invoice_digest_success(self, sample_credentials):
         """Test successful invoice digest query."""
-        client = NavOnlineInvoiceClient(sample_credentials)
+        client = NavOnlineInvoiceClient(sample_credentials, validate_api=False)
 
         with requests_mock.Mocker() as m:
             # Mock token exchange
@@ -212,7 +212,7 @@ class TestNavOnlineInvoiceClient:
 
     def test_get_invoice_data_success(self, sample_credentials):
         """Test successful invoice detail retrieval."""
-        client = NavOnlineInvoiceClient(sample_credentials)
+        client = NavOnlineInvoiceClient(sample_credentials, validate_api=False)
 
         with requests_mock.Mocker() as m:
             # Mock token exchange
@@ -255,7 +255,7 @@ class TestNavOnlineInvoiceClient:
 
     def test_query_invoice_check_success(self, sample_credentials):
         """Test successful invoice check query."""
-        client = NavOnlineInvoiceClient(sample_credentials)
+        client = NavOnlineInvoiceClient(sample_credentials, validate_api=False)
 
         with requests_mock.Mocker() as m:
             # Mock token exchange
