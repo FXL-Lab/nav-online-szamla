@@ -1268,7 +1268,7 @@ class NavOnlineInvoiceClient:
             NavValidationException: If parameters are invalid
             NavApiException: If API requests fail
         """
-        if start_date >= end_date:
+        if start_date > end_date:
             raise NavValidationException("Start date must be before end date")
 
         # Check if date range needs to be split
@@ -2083,7 +2083,7 @@ class NavOnlineInvoiceClient:
             logger.info("=" * 80)
             
             # Validate date range
-            if start_date >= end_date:
+            if start_date > end_date:
                 raise NavValidationException("Start date must be before end date")
             
             # Check if date range needs to be split
