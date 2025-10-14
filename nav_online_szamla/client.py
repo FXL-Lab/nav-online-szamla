@@ -2261,13 +2261,78 @@ class NavOnlineInvoiceClient:
             logger.error(f"Excel import failed: {e}")
             raise NavApiException(f"Failed to import from Excel: {e}")
 
+    def _poll_transaction_status_until_complete(
+        self,
+        transaction_id: str,
+        polling_interval_seconds: int,
+        max_polling_attempts: int
+    ) -> Optional['QueryTransactionStatusResponse']:
+        """
+        Poll transaction status until it's no longer PROCESSING.
+        
+        Args:
+            transaction_id: Transaction ID to check
+            polling_interval_seconds: Time to wait between polling attempts
+            max_polling_attempts: Maximum number of polling attempts
+            
+        Returns:
+            QueryTransactionStatusResponse or None if all attempts failed
+        """
+        for polling_attempt in range(max_polling_attempts):
+            try:
+                transaction_response = self.query_transaction_status(
+                    transaction_id=transaction_id,
+                    return_original_request=False
+                )
+            except Exception as e:
+                logger.warning(f"Transaction {transaction_id} status check attempt {polling_attempt + 1} failed: {e}")
+                # If we've reached max polling attempts, return None
+                if polling_attempt == max_polling_attempts - 1:
+                    logger.error(f"Failed to get status for transaction {transaction_id} after {max_polling_attempts} attempts")
+                    return None
+                # Wait before retrying
+                time.sleep(polling_interval_seconds)
+                continue
+            
+            # Check if we have any processing results to examine
+            has_processing_status = False
+            if (transaction_response.processing_results and 
+                transaction_response.processing_results.processing_result and 
+                len(transaction_response.processing_results.processing_result) > 0):
+                
+                # Check if any invoice is still processing
+                for processing_result in transaction_response.processing_results.processing_result:
+                    if (hasattr(processing_result, 'invoice_status') and 
+                        processing_result.invoice_status and
+                        processing_result.invoice_status.value == 'PROCESSING'):
+                        has_processing_status = True
+                        break
+            
+            logger.debug(f"Transaction {transaction_id} polling attempt {polling_attempt + 1}/{max_polling_attempts}: has_processing_status = {has_processing_status}")
+            
+            # If no invoice is in PROCESSING status, we're done
+            if not has_processing_status:
+                logger.info(f"Transaction {transaction_id} completed - no invoices in PROCESSING status")
+                return transaction_response
+            
+            # If we've reached max polling attempts, return the last response
+            if polling_attempt == max_polling_attempts - 1:
+                logger.warning(f"Transaction {transaction_id} still has PROCESSING invoices after {max_polling_attempts} attempts, stopping polling")
+                return transaction_response
+            
+            # Wait before next polling attempt
+            logger.debug(f"Transaction {transaction_id} still has invoices PROCESSING, waiting {polling_interval_seconds} seconds before next check")
+            time.sleep(polling_interval_seconds)
+        
+        return transaction_response
+
     def process_excel_to_nav_results(
         self,
         input_excel_file: str,
         output_excel_file: str,
-        wait_time: int = 3,
-        max_retries: int = 3,
-        max_invoices_per_batch: int = 10
+        max_invoices_per_batch: int = 10,
+        polling_interval_seconds: int = 3,
+        max_polling_attempts: int = 10
     ) -> str:
         """
         Process Excel file by submitting invoices to NAV and return results in Excel.
@@ -2278,9 +2343,9 @@ class NavOnlineInvoiceClient:
         Args:
             input_excel_file: Path to input Excel file with 'Fejléc adatok' and 'Tétel adatok' sheets
             output_excel_file: Path to output Excel file with results
-            wait_time: Time to wait before checking transaction status (seconds)
-            max_retries: Maximum retries for transaction status check
             max_invoices_per_batch: Maximum number of invoices per batch (default: 10, max: 100)
+            polling_interval_seconds: Time to wait between polling attempts when status is PROCESSING (default: 3 seconds)
+            max_polling_attempts: Maximum number of polling attempts for PROCESSING status (default: 10)
             
         Returns:
             str: Path to the output Excel file with results
@@ -2358,9 +2423,8 @@ class NavOnlineInvoiceClient:
                         'error': str(e)
                     })
             
-            # Step 3: Wait and query transaction status for all batches
-            logger.info(f"Step 3: Checking transaction status for {len(batch_results)} batches (waiting {wait_time} seconds)")
-            time.sleep(wait_time)
+            # Step 3: Query transaction status for all batches with polling
+            logger.info(f"Step 3: Checking transaction status for {len(batch_results)} batches")
             
             # Query status for each batch
             all_results_data = []
@@ -2387,20 +2451,12 @@ class NavOnlineInvoiceClient:
                 batch_transaction_id = batch_info['transaction_id']
                 logger.info(f"Checking status for batch {batch_info['batch_num']}, transaction: {batch_transaction_id}")
                 
-                transaction_response = None
-                for attempt in range(max_retries):
-                    try:
-                        transaction_response = self.query_transaction_status(
-                            transaction_id=batch_transaction_id,
-                            return_original_request=False
-                        )
-                        break
-                    except Exception as e:
-                        if attempt == max_retries - 1:
-                            logger.error(f"Failed to get status for batch {batch_info['batch_num']} after {max_retries} attempts: {e}")
-                        else:
-                            logger.warning(f"Batch {batch_info['batch_num']} status check attempt {attempt + 1} failed: {e}")
-                            time.sleep(2)
+                # Use polling method to wait for transaction to complete
+                transaction_response = self._poll_transaction_status_until_complete(
+                    transaction_id=batch_transaction_id,
+                    polling_interval_seconds=polling_interval_seconds,
+                    max_polling_attempts=max_polling_attempts
+                )
                 
                 if not transaction_response:
                     # Handle failed status query
