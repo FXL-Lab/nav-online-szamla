@@ -2308,9 +2308,8 @@ class NavOnlineInvoiceClient:
                         processing_result.invoice_status and
                         processing_result.invoice_status.value == 'PROCESSING'):
                         has_processing_status = True
+                        logger.info(f"Transaction {transaction_id} still has PROCESSING invoice. Index: {processing_result.index}, status: {processing_result.invoice_status}")
                         break
-            
-            logger.debug(f"Transaction {transaction_id} polling attempt {polling_attempt + 1}/{max_polling_attempts}: has_processing_status = {has_processing_status}")
             
             # If no invoice is in PROCESSING status, we're done
             if not has_processing_status:
@@ -2323,7 +2322,6 @@ class NavOnlineInvoiceClient:
                 return transaction_response
             
             # Wait before next polling attempt
-            logger.debug(f"Transaction {transaction_id} still has invoices PROCESSING, waiting {polling_interval_seconds} seconds before next check")
             time.sleep(polling_interval_seconds)
         
         return transaction_response
@@ -2647,7 +2645,6 @@ class NavOnlineInvoiceClient:
                                 'technical_validation_messages': getattr(processing_result, 'technical_validation_messages', ''),
                                 'error_message': f"Invoice status: {processing_result.invoice_status}" if status == 'ERROR' else ''
                             }
-                            print(f"Result for item {original_index}: {processing_result.invoice_status} -> {status} {result_data}")
                             # Store result using original_index as key
                             final_results[original_index] = result_data
                             
