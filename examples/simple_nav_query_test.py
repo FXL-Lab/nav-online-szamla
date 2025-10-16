@@ -59,8 +59,8 @@ def test_invoice_query(credentials, environment=NavEnvironment.TEST, max_results
         logger.info(f"Testing invoice query with environment: {environment.value}")
         
         # Use a recent date range (last 30 days)
-        end_date = dt.datetime.now()
-        start_date = end_date - dt.timedelta(days=30)
+        end_date = dt.datetime(2025,10,1)
+        start_date = dt.datetime(2025,10,1)
         
         logger.info(f"Querying invoices from {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
         
@@ -128,8 +128,9 @@ def test_excel_export(credentials, environment=NavEnvironment.TEST):
         output_dir.mkdir(exist_ok=True)
         
         # Use a small date range for testing
-        end_date = dt.datetime.now()
-        start_date = end_date - dt.timedelta(days=7)  # Last 7 days
+        end_date = dt.datetime(2025,10,1)
+        start_date = dt.datetime(2025,10,1)
+        
         
         # Generate output file path
         timestamp = dt.datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -173,11 +174,11 @@ def main():
     logger.info("=" * 60)
     
     # Test with development credentials first
-    logger.info(f"Using credentials for tax number: {CREDENTIALS['diego_dev'].tax_number}")
+    logger.info(f"Using credentials for tax number: {CREDENTIALS['fxl_dev'].tax_number}")
     
     # Test 1: Connection test
     logger.info("\n1. Testing NAV API connection...")
-    connection_ok = test_nav_connection(CREDENTIALS['diego_prod'], NavEnvironment.PRODUCTION)
+    connection_ok = test_nav_connection(CREDENTIALS['fxl_dev'], NavEnvironment.TEST)
     
     if not connection_ok:
         logger.error("Connection test failed. Stopping here.")
@@ -185,11 +186,11 @@ def main():
     
     # Test 2: Invoice query test
     logger.info("\n2. Testing invoice query...")
-    query_ok = test_invoice_query(CREDENTIALS['diego_prod'], NavEnvironment.PRODUCTION, max_results=3)
+    query_ok = test_invoice_query(CREDENTIALS['fxl_dev'], NavEnvironment.TEST, max_results=3)
     
     # Test 3: Excel export test
     logger.info("\n3. Testing Excel export...")
-    # export_ok = test_excel_export(DEFAULT_CREDENTIALS, NavEnvironment.TEST)
+    export_ok = test_excel_export(CREDENTIALS['fxl_dev'], NavEnvironment.TEST)
     
     # Summary
     logger.info("\n" + "=" * 60)

@@ -10,7 +10,7 @@ import time
 import concurrent.futures
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict
 
 import pandas as pd
 
@@ -81,6 +81,8 @@ from .models import (
     InvoiceAnnulment,
     InvoiceAnnulmentType,
     AnnulmentCodeType,
+    # Status types
+    InvoiceStatusType,
 )
 
 # Import only essential custom classes
@@ -2555,6 +2557,243 @@ class NavOnlineInvoiceClient:
             logger.error(f"Excel to NAV processing failed: {e}")
             raise NavApiException(f"Failed to process Excel to NAV results: {e}")
 
+    def _process_annulment_batch_with_rescue(
+        self,
+        batch_data: List[Dict],
+        polling_interval_seconds: int,
+        max_polling_attempts: int,
+        max_rescue_attempts: int = 2
+    ) -> List[Dict]:
+        """
+        Process a batch of annulment data with rescue logic for failed transactions.
+        
+        When a batch transaction fails, this method identifies items that would have
+        succeeded and resubmits them in a new transaction, while preserving the
+        original order of results.
+        
+        Args:
+            batch_data: List of annulment data dictionaries
+            polling_interval_seconds: Seconds to wait between status checks
+            max_polling_attempts: Maximum attempts to check transaction status
+            max_rescue_attempts: Maximum rescue attempts for failed transactions
+            
+        Returns:
+            List of result dictionaries maintaining original order
+        """
+        attempt = 0
+        current_batch_data = batch_data.copy()
+        
+        # Create mapping from original_index to results
+        # Use a dict instead of list to handle non-contiguous indices
+        final_results = {}
+        
+        while attempt < max_rescue_attempts and current_batch_data:
+            attempt += 1
+            logger.info(f"Processing batch attempt {attempt} with {len(current_batch_data)} items")
+            
+            try:
+                # Prepare invoice references for current batch
+                invoice_references = []
+                for data in current_batch_data:
+                    invoice_references.append((
+                        data['annulment_reference'],
+                        data['annulment_code'],
+                        data['annulment_reason']
+                    ))
+                
+                # Submit technical annulment batch
+                response = self.submit_technical_annulment(
+                    invoice_references=invoice_references,
+                    exchange_key=self.credentials.exchange_key
+                )
+                
+                batch_transaction_id = response.transaction_id
+                logger.info(f"Submitted batch with transaction ID: {batch_transaction_id}")
+                
+                # Poll transaction status until complete
+                status_response = self._poll_transaction_status_until_complete(
+                    batch_transaction_id,
+                    polling_interval_seconds,
+                    max_polling_attempts
+                )
+                
+                # Process the results
+                successful_items = []
+                failed_items = []
+                
+                if status_response and hasattr(status_response, 'processing_results') and status_response.processing_results:
+                    processing_results_list = getattr(status_response.processing_results, 'processing_result', [])
+                    if not processing_results_list:
+                        # Fallback if processing_result is not a list
+                        processing_results_list = [status_response.processing_results] if status_response.processing_results else []
+                    
+                    for i, processing_result in enumerate(processing_results_list):
+                        if i < len(current_batch_data):
+                            original_index = current_batch_data[i]['original_index']
+                            
+                            # Fix status mapping: ABORTED should be ERROR, not DONE
+                            if processing_result.invoice_status in [InvoiceStatusType.RECEIVED, InvoiceStatusType.PROCESSING, InvoiceStatusType.SAVED, InvoiceStatusType.DONE]:
+                                status = 'DONE'
+                            elif processing_result.invoice_status == InvoiceStatusType.ABORTED:
+                                status = 'ERROR'
+                            else:
+                                status = 'ERROR'
+                            
+                            result_data = {
+                                'transaction_id': batch_transaction_id,
+                                'index': original_index + 1,  # 1-based index
+                                'status': status,
+                                'business_validation_messages': getattr(processing_result, 'business_validation_messages', ''),
+                                'technical_validation_messages': getattr(processing_result, 'technical_validation_messages', ''),
+                                'error_message': f"Invoice status: {processing_result.invoice_status}" if status == 'ERROR' else ''
+                            }
+                            print(f"Result for item {original_index}: {processing_result.invoice_status} -> {status} {result_data}")
+                            # Store result using original_index as key
+                            final_results[original_index] = result_data
+                            
+                            # Categorize items for potential rescue
+                            if processing_result.invoice_status in [InvoiceStatusType.RECEIVED, InvoiceStatusType.PROCESSING, InvoiceStatusType.SAVED, InvoiceStatusType.DONE]:
+                                successful_items.append(current_batch_data[i])
+                            else:
+                                logger.warning(f"Failed item detected: {current_batch_data[i]} with status {processing_result.invoice_status}")
+                                failed_items.append(current_batch_data[i])
+                
+                else:
+                    # No processing results - treat as all successful
+                    for i, data in enumerate(current_batch_data):
+                        original_index = data['original_index']
+                        result_data = {
+                            'transaction_id': batch_transaction_id,
+                            'index': original_index + 1,
+                            'status': 'DONE',
+                            'business_validation_messages': '',
+                            'technical_validation_messages': '',
+                            'error_message': ''
+                        }
+                        final_results[original_index] = result_data
+                        successful_items.append(data)
+                
+                # Transaction completed successfully, check if we need rescue
+                if successful_items and failed_items and attempt < max_rescue_attempts:
+                    # We have both successful and failed items - this might cause the whole transaction to fail
+                    # Let's resubmit only the successful items in the next attempt
+                    logger.info(f"Mixed results detected: {len(successful_items)} successful, {len(failed_items)} failed. Will rescue successful items.")
+                    current_batch_data = successful_items  # Next iteration will only process successful items
+                    continue  # Continue to next attempt with rescued items
+                else:
+                    # Either all succeeded, all failed, or no more rescue attempts - we're done
+                    logger.info(f"Batch completed: {len(successful_items)} successful, {len(failed_items)} failed")
+                    break
+                
+            except Exception as e:
+                logger.error(f"Batch attempt {attempt} failed: {e}")
+                
+                # This is where rescue logic happens!
+                # When transaction fails, we need to identify items that would have succeeded
+                # and resubmit them in the next attempt
+                
+                if attempt < max_rescue_attempts and len(current_batch_data) > 1:
+                    logger.info(f"Transaction failed, attempting rescue. Will analyze transaction status to identify successful items.")
+                    
+                    # Try to get transaction status even though submission failed
+                    rescue_successful_items = []
+                    rescue_failed_items = []
+                    
+                    if hasattr(e, 'response') or 'transaction_id' in str(e):
+                        # If we got a transaction ID before the error, try to check status
+                        try:
+                            if 'batch_transaction_id' in locals() and batch_transaction_id:
+                                logger.info(f"Checking failed transaction {batch_transaction_id} for successful items")
+                                status_response = self._poll_transaction_status_until_complete(
+                                    batch_transaction_id,
+                                    polling_interval_seconds,
+                                    max_polling_attempts
+                                )
+                                
+                                if status_response and hasattr(status_response, 'processing_results') and status_response.processing_results:
+                                    processing_results_list = getattr(status_response.processing_results, 'processing_result', [])
+                                    if not processing_results_list:
+                                        processing_results_list = [status_response.processing_results] if status_response.processing_results else []
+                                    
+                                    for i, processing_result in enumerate(processing_results_list):
+                                        if i < len(current_batch_data):
+                                            original_index = current_batch_data[i]['original_index']
+                                            
+                                            if processing_result.invoice_status in [InvoiceStatusType.RECEIVED, InvoiceStatusType.PROCESSING, InvoiceStatusType.SAVED, InvoiceStatusType.DONE]:
+                                                # This item would have succeeded - rescue it!
+                                                rescue_successful_items.append(current_batch_data[i])
+                                                logger.debug(f"Item {original_index} would have succeeded (status: {processing_result.invoice_status}), adding to rescue list")
+                                            else:
+                                                # This item failed (ABORTED) - mark it as failed
+                                                rescue_failed_items.append(current_batch_data[i])
+                                                result_data = {
+                                                    'transaction_id': batch_transaction_id,
+                                                    'index': original_index + 1,
+                                                    'status': 'ERROR',
+                                                    'business_validation_messages': getattr(processing_result, 'business_validation_messages', ''),
+                                                    'technical_validation_messages': getattr(processing_result, 'technical_validation_messages', ''),
+                                                    'error_message': f"Invoice status: {processing_result.invoice_status}"
+                                                }
+                                                final_results[original_index] = result_data
+                        except Exception as status_error:
+                            logger.warning(f"Could not check status of failed transaction: {status_error}")
+                    
+                    if rescue_successful_items:
+                        logger.info(f"Found {len(rescue_successful_items)} items that would have succeeded. Will resubmit them.")
+                        current_batch_data = rescue_successful_items  # Retry with only successful items
+                    else:
+                        logger.info(f"No successful items found for rescue. Marking all as failed.")
+                        # Mark all remaining items as failed
+                        for i, data in enumerate(current_batch_data):
+                            original_index = data['original_index']
+                            if original_index not in final_results:
+                                result_data = {
+                                    'transaction_id': 'ERROR',
+                                    'index': original_index + 1,
+                                    'status': 'ERROR',
+                                    'business_validation_messages': '',
+                                    'technical_validation_messages': '',
+                                    'error_message': str(e)
+                                }
+                                final_results[original_index] = result_data
+                        break
+                else:
+                    # Final attempt failed - mark all remaining items as failed
+                    logger.error(f"Final rescue attempt failed. Marking all remaining items as failed.")
+                    for i, data in enumerate(current_batch_data):
+                        original_index = data['original_index']
+                        if original_index not in final_results:  # Not yet processed
+                            result_data = {
+                                'transaction_id': 'ERROR',
+                                'index': original_index + 1,
+                                'status': 'ERROR',
+                                'business_validation_messages': '',
+                                'technical_validation_messages': '',
+                                'error_message': str(e)
+                            }
+                            final_results[original_index] = result_data
+                    break
+        
+        # Convert dictionary back to list, sorted by original_index
+        # Ensure we have results for all items in the original batch_data
+        result_list = []
+        for data in batch_data:
+            original_index = data['original_index']
+            if original_index in final_results:
+                result_list.append(final_results[original_index])
+            else:
+                # Fallback for missing results
+                result_list.append({
+                    'transaction_id': 'ERROR',
+                    'index': original_index + 1,
+                    'status': 'ERROR',
+                    'business_validation_messages': '',
+                    'technical_validation_messages': '',
+                    'error_message': 'Processing incomplete'
+                })
+        
+        return result_list
+
     # Split data into batches
     def split_into_batches(self, data: list, batch_size: int) -> list:
         batches = []
@@ -2641,121 +2880,36 @@ class NavOnlineInvoiceClient:
                 annulment_data.append({
                     'annulment_reference': reference,
                     'annulment_code': annulment_code,
-                    'annulment_reason': reason
+                    'annulment_reason': reason,
+                    'original_index': len(annulment_data)  # Use the current length as index for valid items
                 })
             
             if not annulment_data:
                 raise NavValidationException("No valid annulment data found in Excel file")
             
+            # Get authentication token
+            token_response = self.get_token()
+            logger.info("Authentication successful")
+            
+            # Split data into batches and process with rescue logic
             batches = self.split_into_batches(annulment_data, max_annulments_per_batch)
             total_batches = len(batches)
             all_results = []
-            transaction_ids = []
             
             logger.info(f"Processing {len(annulment_data)} annulments in {total_batches} batches")
             
-            # Process each batch
+            # Process each batch with rescue logic
             for batch_num, batch_data in enumerate(batches, 1):
-                batch_transaction_id = None
-                batch_results = []
+                logger.info(f"Processing batch {batch_num}/{total_batches} with {len(batch_data)} annulments")
                 
-                try:
-                    logger.info(f"Processing batch {batch_num}/{total_batches} with {len(batch_data)} annulments")
-                    
-                    # Prepare invoice references for this batch
-                    invoice_references = []
-                    for data in batch_data:
-                        invoice_references.append((
-                            data['annulment_reference'],
-                            data['annulment_code'],
-                            data['annulment_reason']
-                        ))
-                    
-                    # Submit technical annulment for this batch
-                    response = self.submit_technical_annulment(
-                        invoice_references=invoice_references,
-                        exchange_key=self.credentials.exchange_key
-                    )
-                    
-                    batch_transaction_id = response.transaction_id
-                    transaction_ids.append(batch_transaction_id)
-                    
-                    # Check transaction status for this batch
-                    if batch_transaction_id:
-                        status_response = self._poll_transaction_status_until_complete(
-                            batch_transaction_id,
-                            polling_interval_seconds,
-                            max_polling_attempts
-                        )
-                        
-                        if status_response and hasattr(status_response, 'processing_results') and status_response.processing_results:
-                            processing_results_list = getattr(status_response.processing_results, 'processing_result', [])
-                            if not processing_results_list:
-                                # Fallback if processing_result is not a list
-                                processing_results_list = [status_response.processing_results] if status_response.processing_results else []
-                            
-                            for i, processing_result in enumerate(processing_results_list):
-                                result_data = batch_data[i].copy() if i < len(batch_data) else {}
-                                
-                                result_data.update({
-                                    'transaction_id': batch_transaction_id,
-                                    'index': i + 1,
-                                    'status': 'DONE' if processing_result.invoice_status == 'DONE' else 'ERROR',
-                                    'business_validation_messages': getattr(processing_result, 'business_validation_messages', ''),
-                                    'technical_validation_messages': getattr(processing_result, 'technical_validation_messages', ''),
-                                    'error_message': ''
-                                })
-                                batch_results.append(result_data)
-                        else:
-                            # If no processing results, create basic result entries
-                            for i, data in enumerate(batch_data):
-                                result_data = data.copy()
-                                result_data.update({
-                                    'transaction_id': batch_transaction_id,
-                                    'index': i + 1,
-                                    'status': 'DONE',
-                                    'business_validation_messages': '',
-                                    'technical_validation_messages': '',
-                                    'error_message': ''
-                                })
-                                batch_results.append(result_data)
-                    
-                    # Add this batch's results to all results
-                    all_results.extend(batch_results)
-                    
-                except NavApiException as e:
-                    logger.error(f"NAV API error in batch {batch_num}: {e}")
-                    # Create error results for this batch and continue with remaining batches
-                    for i, data in enumerate(batch_data):
-                        result_data = data.copy()
-                        result_data.update({
-                            'transaction_id': batch_transaction_id or f'Error_Batch_{batch_num}',
-                            'index': i + 1,
-                            'status': 'ERROR',
-                            'business_validation_messages': '',
-                            'technical_validation_messages': '',
-                            'error_message': str(e)
-                        })
-                        batch_results.append(result_data)
-                    all_results.extend(batch_results)
-                    continue  # Continue with next batch
+                batch_results = self._process_annulment_batch_with_rescue(
+                    batch_data=batch_data,
+                    polling_interval_seconds=polling_interval_seconds,
+                    max_polling_attempts=max_polling_attempts,
+                    max_rescue_attempts=2
+                )
                 
-                except Exception as e:
-                    logger.error(f"Unexpected error in batch {batch_num}: {e}")
-                    # Create error results for this batch and continue with remaining batches
-                    for i, data in enumerate(batch_data):
-                        result_data = data.copy()
-                        result_data.update({
-                            'transaction_id': batch_transaction_id or f'Error_Batch_{batch_num}',
-                            'index': i + 1,
-                            'status': 'ERROR',
-                            'business_validation_messages': '',
-                            'technical_validation_messages': '',
-                            'error_message': str(e)
-                        })
-                        batch_results.append(result_data)
-                    all_results.extend(batch_results)
-                    continue  # Continue with next batch
+                all_results.extend(batch_results)
             
             # Convert results to DataFrame
             df_results = pd.DataFrame(all_results)
@@ -2783,7 +2937,7 @@ class NavOnlineInvoiceClient:
                     worksheet.column_dimensions[column_letter].width = adjusted_width
             
             logger.info(f"Results written to {output_excel_file}")
-            logger.info(f"Processed {len(all_results)} annulments with {len(transaction_ids)} transactions")
+            logger.info(f"Processed {len(all_results)} annulments in {total_batches} batches")
             
             return output_excel_file
             
