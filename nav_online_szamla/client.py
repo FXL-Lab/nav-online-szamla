@@ -2555,6 +2555,244 @@ class NavOnlineInvoiceClient:
             logger.error(f"Excel to NAV processing failed: {e}")
             raise NavApiException(f"Failed to process Excel to NAV results: {e}")
 
+    # Split data into batches
+    def split_into_batches(self, data: list, batch_size: int) -> list:
+        batches = []
+        for i in range(0, len(data), batch_size):
+            batches.append(data[i:i + batch_size])
+        return batches
+
+    def process_excel_to_nav_annulment_results(
+        self,
+        input_excel_file: str,
+        output_excel_file: str,
+        max_annulments_per_batch: int = 50,
+        polling_interval_seconds: int = 3,
+        max_polling_attempts: int = 10
+    ) -> str:
+        """
+        Process Excel file containing technical annulment data and submit to NAV.
+        
+        This method reads an Excel file with annulment data, validates it, submits
+        technical annulments to NAV in batches, and writes detailed results to an output Excel file.
+        
+        Args:
+            input_excel_file: Path to input Excel file with annulment data
+            output_excel_file: Path where results Excel file will be saved
+            max_annulments_per_batch: Maximum number of annulments per batch (default: 50)
+            polling_interval_seconds: Seconds to wait between status checks (default: 3)
+            max_polling_attempts: Maximum attempts to check transaction status (default: 10)
+            
+        Returns:
+            Path to the created results Excel file
+            
+        Raises:
+            NavValidationException: If Excel format is invalid or data validation fails
+            NavApiException: If NAV API errors occur
+            FileNotFoundError: If input file doesn't exist
+            
+        Expected Excel format:
+            - 'érvénytelenítési hivatkozás': Invoice reference to annul
+            - 'érvénytelenítési kód': Annulment code (ERRATIC, CANCEL, etc.)
+            - 'érvénytelenítési ok': Reason for annulment
+        """
+        try:
+            # Validate input file exists
+            if not Path(input_excel_file).exists():
+                raise FileNotFoundError(f"Input Excel file not found: {input_excel_file}")
+            
+            # Read and validate Excel file
+            try:
+                df = pd.read_excel(input_excel_file)
+            except Exception as e:
+                raise NavValidationException(f"Failed to read Excel file: {e}")
+            
+            if df.empty:
+                raise NavValidationException("Excel file is empty")
+            
+            # Check required columns
+            required_columns = ['érvénytelenítési hivatkozás', 'érvénytelenítési kód', 'érvénytelenítési ok']
+            missing_columns = [col for col in required_columns if col not in df.columns]
+            if missing_columns:
+                raise NavValidationException(f"Missing required columns: {', '.join(missing_columns)}")
+            
+            # Basic validation - check if we have reasonable data
+            if len(df.columns) < 3:
+                raise NavValidationException("Excel file does not contain the expected minimum number of columns")
+            
+            # Prepare annulment data
+            annulment_data = []
+            for index, row in df.iterrows():
+                # Convert to string and strip whitespace
+                reference = str(row['érvénytelenítési hivatkozás']).strip()
+                code_str = str(row['érvénytelenítési kód']).strip().upper()
+                reason = str(row['érvénytelenítési ok']).strip()
+                
+                # Skip empty rows
+                if not reference or reference == 'nan' or not code_str or code_str == 'NAN' or not reason or reason == 'nan':
+                    continue
+                
+                try:
+                    annulment_code = AnnulmentCodeType(code_str)
+                except ValueError:
+                    valid_codes = [code.value for code in AnnulmentCodeType]
+                    raise NavValidationException(f"Invalid annulment code in row {index + 2}: {code_str}. Valid codes: {', '.join(valid_codes)}")
+                
+                annulment_data.append({
+                    'annulment_reference': reference,
+                    'annulment_code': annulment_code,
+                    'annulment_reason': reason
+                })
+            
+            if not annulment_data:
+                raise NavValidationException("No valid annulment data found in Excel file")
+            
+            batches = self.split_into_batches(annulment_data, max_annulments_per_batch)
+            total_batches = len(batches)
+            all_results = []
+            transaction_ids = []
+            
+            logger.info(f"Processing {len(annulment_data)} annulments in {total_batches} batches")
+            
+            # Process each batch
+            for batch_num, batch_data in enumerate(batches, 1):
+                batch_transaction_id = None
+                batch_results = []
+                
+                try:
+                    logger.info(f"Processing batch {batch_num}/{total_batches} with {len(batch_data)} annulments")
+                    
+                    # Prepare invoice references for this batch
+                    invoice_references = []
+                    for data in batch_data:
+                        invoice_references.append((
+                            data['annulment_reference'],
+                            data['annulment_code'],
+                            data['annulment_reason']
+                        ))
+                    
+                    # Submit technical annulment for this batch
+                    response = self.submit_technical_annulment(
+                        invoice_references=invoice_references,
+                        exchange_key=self.credentials.exchange_key
+                    )
+                    
+                    batch_transaction_id = response.transaction_id
+                    transaction_ids.append(batch_transaction_id)
+                    
+                    # Check transaction status for this batch
+                    if batch_transaction_id:
+                        status_response = self._poll_transaction_status_until_complete(
+                            batch_transaction_id,
+                            polling_interval_seconds,
+                            max_polling_attempts
+                        )
+                        
+                        if status_response and hasattr(status_response, 'processing_results') and status_response.processing_results:
+                            processing_results_list = getattr(status_response.processing_results, 'processing_result', [])
+                            if not processing_results_list:
+                                # Fallback if processing_result is not a list
+                                processing_results_list = [status_response.processing_results] if status_response.processing_results else []
+                            
+                            for i, processing_result in enumerate(processing_results_list):
+                                result_data = batch_data[i].copy() if i < len(batch_data) else {}
+                                
+                                result_data.update({
+                                    'transaction_id': batch_transaction_id,
+                                    'index': i + 1,
+                                    'status': 'DONE' if processing_result.invoice_status == 'DONE' else 'ERROR',
+                                    'business_validation_messages': getattr(processing_result, 'business_validation_messages', ''),
+                                    'technical_validation_messages': getattr(processing_result, 'technical_validation_messages', ''),
+                                    'error_message': ''
+                                })
+                                batch_results.append(result_data)
+                        else:
+                            # If no processing results, create basic result entries
+                            for i, data in enumerate(batch_data):
+                                result_data = data.copy()
+                                result_data.update({
+                                    'transaction_id': batch_transaction_id,
+                                    'index': i + 1,
+                                    'status': 'DONE',
+                                    'business_validation_messages': '',
+                                    'technical_validation_messages': '',
+                                    'error_message': ''
+                                })
+                                batch_results.append(result_data)
+                    
+                    # Add this batch's results to all results
+                    all_results.extend(batch_results)
+                    
+                except NavApiException as e:
+                    logger.error(f"NAV API error in batch {batch_num}: {e}")
+                    # Create error results for this batch and continue with remaining batches
+                    for i, data in enumerate(batch_data):
+                        result_data = data.copy()
+                        result_data.update({
+                            'transaction_id': batch_transaction_id or f'Error_Batch_{batch_num}',
+                            'index': i + 1,
+                            'status': 'ERROR',
+                            'business_validation_messages': '',
+                            'technical_validation_messages': '',
+                            'error_message': str(e)
+                        })
+                        batch_results.append(result_data)
+                    all_results.extend(batch_results)
+                    continue  # Continue with next batch
+                
+                except Exception as e:
+                    logger.error(f"Unexpected error in batch {batch_num}: {e}")
+                    # Create error results for this batch and continue with remaining batches
+                    for i, data in enumerate(batch_data):
+                        result_data = data.copy()
+                        result_data.update({
+                            'transaction_id': batch_transaction_id or f'Error_Batch_{batch_num}',
+                            'index': i + 1,
+                            'status': 'ERROR',
+                            'business_validation_messages': '',
+                            'technical_validation_messages': '',
+                            'error_message': str(e)
+                        })
+                        batch_results.append(result_data)
+                    all_results.extend(batch_results)
+                    continue  # Continue with next batch
+            
+            # Convert results to DataFrame
+            df_results = pd.DataFrame(all_results)
+            
+            # Create output directory if it doesn't exist
+            output_path = Path(output_excel_file)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Write results to Excel
+            with pd.ExcelWriter(output_excel_file, engine='openpyxl') as writer:
+                df_results.to_excel(writer, sheet_name='Annulment Results', index=False)
+                
+                # Auto-adjust column widths
+                worksheet = writer.sheets['Annulment Results']
+                for column in worksheet.columns:
+                    max_length = 0
+                    column_letter = column[0].column_letter
+                    for cell in column:
+                        try:
+                            if len(str(cell.value)) > max_length:
+                                max_length = len(str(cell.value))
+                        except:
+                            pass
+                    adjusted_width = min(max_length + 2, 50)  # Cap at 50 characters
+                    worksheet.column_dimensions[column_letter].width = adjusted_width
+            
+            logger.info(f"Results written to {output_excel_file}")
+            logger.info(f"Processed {len(all_results)} annulments with {len(transaction_ids)} transactions")
+            
+            return output_excel_file
+            
+        except Exception as e:
+            if isinstance(e, (NavValidationException, NavApiException)):
+                raise
+            logger.error(f"Excel to NAV annulment processing failed: {e}")
+            raise NavApiException(f"Failed to process Excel to NAV annulment results: {e}")
+
     def close(self):
         """Close the HTTP client."""
         self.http_client.close()
