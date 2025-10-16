@@ -2555,6 +2555,29 @@ class NavOnlineInvoiceClient:
             logger.error(f"Excel to NAV processing failed: {e}")
             raise NavApiException(f"Failed to process Excel to NAV results: {e}")
 
+    def _concatenate_validation_messages(self, validation_messages) -> str:
+        """
+        Concatenate validation messages into a single string.
+        
+        Args:
+            validation_messages: List of validation result objects with validation_result_code and message attributes
+            
+        Returns:
+            Concatenated validation messages as a single string
+        """
+        if not validation_messages:
+            return ''
+        
+        messages = []
+        for msg in validation_messages:
+            if hasattr(msg, 'validation_result_code') and hasattr(msg, 'message'):
+                if msg.message:
+                    messages.append(msg.message)
+            elif hasattr(msg, 'message') and msg.message:
+                messages.append(msg.message)
+        
+        return '; '.join(messages)
+
     def _process_annulment_batch_with_rescue(
         self,
         batch_data: List[Dict],
@@ -2607,7 +2630,8 @@ class NavOnlineInvoiceClient:
                 
                 batch_transaction_id = response.transaction_id
                 logger.info(f"Submitted batch with transaction ID: {batch_transaction_id}")
-                
+
+                time.sleep(polling_interval_seconds)
                 # Poll transaction status until complete
                 status_response = self._poll_transaction_status_until_complete(
                     batch_transaction_id,
@@ -2641,8 +2665,12 @@ class NavOnlineInvoiceClient:
                                 'transaction_id': batch_transaction_id,
                                 'index': original_index + 1,  # 1-based index
                                 'status': status,
-                                'business_validation_messages': getattr(processing_result, 'business_validation_messages', ''),
-                                'technical_validation_messages': getattr(processing_result, 'technical_validation_messages', ''),
+                                'business_validation_messages': self._concatenate_validation_messages(
+                                    getattr(processing_result, 'business_validation_messages', [])
+                                ),
+                                'technical_validation_messages': self._concatenate_validation_messages(
+                                    getattr(processing_result, 'technical_validation_messages', [])
+                                ),
                                 'error_message': f"Invoice status: {processing_result.invoice_status}" if status == 'ERROR' else ''
                             }
                             # Store result using original_index as key
@@ -2727,8 +2755,12 @@ class NavOnlineInvoiceClient:
                                                     'transaction_id': batch_transaction_id,
                                                     'index': original_index + 1,
                                                     'status': 'ERROR',
-                                                    'business_validation_messages': getattr(processing_result, 'business_validation_messages', ''),
-                                                    'technical_validation_messages': getattr(processing_result, 'technical_validation_messages', ''),
+                                                    'business_validation_messages': self._concatenate_validation_messages(
+                                                        getattr(processing_result, 'business_validation_messages', [])
+                                                    ),
+                                                    'technical_validation_messages': self._concatenate_validation_messages(
+                                                        getattr(processing_result, 'technical_validation_messages', [])
+                                                    ),
                                                     'error_message': f"Invoice status: {processing_result.invoice_status}"
                                                 }
                                                 final_results[original_index] = result_data
