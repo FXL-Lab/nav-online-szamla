@@ -380,27 +380,14 @@ class ExcelFieldMapper:
         # Mapping from Hungarian descriptions to enum values
         payment_method_mapping = {
             'Készpénz': PaymentMethodType.CASH,
-            'Banki átutalás': PaymentMethodType.TRANSFER,
-            'Bankártya': PaymentMethodType.CARD,
-            'Csekk': PaymentMethodType.VOUCHER,
-            'Utalvány': PaymentMethodType.VOUCHER,
-            'Váltó': PaymentMethodType.VOUCHER,
+            'Átutalás': PaymentMethodType.TRANSFER,
+            'Bankkártya, hitelkártya, egyéb készpénz helyettesítő eszköz': PaymentMethodType.CARD,
+            'Utalvány, váltó, egyéb pénzhelyettesítő eszköz': PaymentMethodType.VOUCHER,
         }
         
         # Try exact match first
         if hungarian_description in payment_method_mapping:
             return payment_method_mapping[hungarian_description]
-        
-        # Try to match by key parts for flexibility
-        description_lower = hungarian_description.lower()
-        if 'készpénz' in description_lower or 'cash' in description_lower:
-            return PaymentMethodType.CASH
-        elif 'átutalás' in description_lower or 'transfer' in description_lower:
-            return PaymentMethodType.TRANSFER
-        elif 'kártya' in description_lower or 'card' in description_lower:
-            return PaymentMethodType.CARD
-        elif any(word in description_lower for word in ['csekk', 'utalvány', 'váltó', 'voucher']):
-            return PaymentMethodType.VOUCHER
         
         # Default fallback
         logger.warning(f"Unknown Hungarian payment method description: {hungarian_description}, defaulting to OTHER")
