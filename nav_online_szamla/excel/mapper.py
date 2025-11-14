@@ -77,28 +77,6 @@ class ExcelFieldMapper:
             'MODIFY': 'Sor módosítás',
             'DELETE': 'Sor törlés'
         },
-        
-        # VAT exemption cases
-        'vat_exemption_case': {
-            'AAM': 'Alanyi adómentes',
-            'TAM': 'Tárgyi adómentes ill. a tevékenység közérdekű vagy speciális jellegére tekintettel adómentes',
-            'KBAET': 'Adómentes Közösségen belüli termékértékesítés, új közlekedési eszköz nélkül',
-            'KBAUK': 'Adómentes Közösségen belüli új közlekedési eszköz értékesítés',
-            'EAM': 'Adómentes termékértékesítés a Közösség területén kívülre (termékexport harmadik országba)',
-            'NAM': 'Egyéb nemzetközi ügyletekhez kapcsolódó jogcímen megállapított adómentesség',
-            'UNKNOWN': '3.0 előtti számlára hivatkozó, illetve előzmény nélküli módosító és sztornó számlák esetén használható'
-        },
-        
-        # VAT out of scope cases
-        # 'vat_out_of_scope_case': {
-        #     'ATK': 'Áfa tárgyi hatályán kívül',
-        #     'EUFAD37': 'Áfa tv. 37. §-a alapján másik tagállamban teljesített, fordítottan adózó ügylet',
-        #     'EUFADE': 'Másik tagállamban teljesített, nem az Áfa tv. 37. §-a alá tartozó, fordítottan adózó ügylet',
-        #     'EUE': 'Másik tagállamban teljesített, nem fordítottan adózó ügylet',
-        #     'HO': 'Harmadik országban teljesített ügylet',
-        #     'UNKNOWN': '3.0 előtti számlára hivatkozó, illetve előzmény nélküli módosító és sztornó számlák esetén használható'
-        # },
-        
         # Tax base deviation cases
         'tax_base_deviation_case': {
             'REFUNDABLE_VAT': 'Az áfa felszámítása a 11. vagy 14. § alapján történt és az áfát a számla címzettjének meg kell térítenie',
@@ -819,11 +797,9 @@ class ExcelFieldMapper:
                 else:
                     exemption_case_value = None
                     
-                row.vat_exemption_case = cls._apply_value_replacement(
-                    exemption_case_value,
-                    'vat_exemption_case'
-                )
-                row.vat_exemption_reason = vat_rate_info.vat_exemption.reason
+                # Store the code in case and the original API reason in reason
+                row.vat_exemption_case = exemption_case_value  # This should be the code like "TAM"
+                row.vat_exemption_reason = vat_rate_info.vat_exemption.reason  # Original reason from NAV API
                 
             # Out of scope VAT
             if hasattr(vat_rate_info, 'vat_out_of_scope') and vat_rate_info.vat_out_of_scope:
@@ -1408,10 +1384,6 @@ class ExcelFieldMapper:
         Returns:
             tuple: Unique key representing the VAT rate characteristics
         """
-        # Handle no VAT charge (EU transactions)
-        if line.no_vat_charge_indicator:
-            return ('no_vat_charge',)
-        
         # Handle out of scope VAT
         if line.out_of_scope_indicator or line.out_of_scope_case:
             return ('out_of_scope', line.out_of_scope_case, line.out_of_scope_reason or '')
@@ -1436,6 +1408,10 @@ class ExcelFieldMapper:
                 return ('vat_content', normalized_content)
             except (ValueError, TypeError, ArithmeticError):
                 pass
+        
+        # Handle no VAT charge (EU transactions)
+        if line.no_vat_charge_indicator:
+            return ('no_vat_charge',)
         
         # Default case - assume 0% VAT
         return ('vat_percentage', Decimal('0.0'))
