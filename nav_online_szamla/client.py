@@ -83,6 +83,13 @@ from .models import (
     AnnulmentCodeType,
     # Status types
     InvoiceStatusType,
+    # Transaction types
+    QueryTransactionListRequest,
+    QueryTransactionListResponse,
+    DateTimeIntervalParamType,
+    RequestStatusType,
+    TransactionListResultType,
+    TransactionType,
 )
 
 # Import only essential custom classes
@@ -114,7 +121,7 @@ from .utils import (
 from .http_client import NavHttpClient
 
 # Excel functionality
-from .excel import InvoiceExcelExporter, InvoiceExcelImporter, StreamingInvoiceExcelExporter
+from .excel import InvoiceExcelExporter, InvoiceExcelImporter, StreamingInvoiceExcelExporter, TransactionExcelExporter
 
 # File storage for streaming operations
 from .file_storage import InvoiceFileStorage
@@ -841,6 +848,113 @@ class NavOnlineInvoiceClient:
             logger.error(f"Unexpected error in query_transaction_status: {e}")
             raise NavApiException(f"Failed to query transaction status: {str(e)}")
 
+    def create_query_transaction_list_request(
+        self,
+        page: int,
+        start_date: datetime,
+        end_date: datetime,
+        request_status: Optional[RequestStatusType] = None
+    ) -> QueryTransactionListRequest:
+        """
+        Create a QueryTransactionListRequest for querying transaction lists.
+
+        Args:
+            page: Page number to query (1-based)
+            start_date: Start date for the query range
+            end_date: End date for the query range  
+            request_status: Filter by request status (optional)
+
+        Returns:
+            QueryTransactionListRequest: The constructed request
+        """
+        try:
+            # Create basic header
+            header = self._create_basic_header()
+            
+            # Create user header with simple signature
+            user_header = self._create_user_header(self.credentials, header)
+            
+            # Create software info
+            software = self._create_software_info(self.credentials)
+            
+            # Create date time interval
+            ins_date = DateTimeIntervalParamType(
+                date_time_from=format_timestamp_for_nav(start_date),
+                date_time_to=format_timestamp_for_nav(end_date)
+            )
+            
+            # Create the request
+            request = QueryTransactionListRequest(
+                header=header,
+                user=user_header,
+                software=software,
+                page=page,
+                ins_date=ins_date,
+                request_status=request_status
+            )
+            
+            return request
+            
+        except Exception as e:
+            logger.error(f"Failed to create transaction list request: {e}")
+            raise NavValidationException(f"Failed to create transaction list request: {e}")
+
+    def query_transaction_list(
+        self,
+        page: int,
+        start_date: datetime,
+        end_date: datetime,
+        request_status: Optional[RequestStatusType] = None
+    ) -> QueryTransactionListResponse:
+        """
+        Query transaction list for a given page and date range.
+
+        Args:
+            page: Page number to query (1-based)
+            start_date: Start date for the query range
+            end_date: End date for the query range
+            request_status: Filter by request status (optional)
+
+        Returns:
+            QueryTransactionListResponse: The transaction list response
+
+        Raises:
+            NavApiException: If the API request fails
+            NavValidationException: If validation fails
+        """
+        try:
+            logger.info(f"Querying transaction list page {page} for date range: {start_date.date()} to {end_date.date()}")
+            
+            # Create request
+            request = self.create_query_transaction_list_request(
+                page=page,
+                start_date=start_date,
+                end_date=end_date,
+                request_status=request_status
+            )
+            
+            # Serialize request to XML
+            xml_request = self._serialize_request_to_xml(request)
+            logger.debug(f"Transaction list request XML: {xml_request}")
+
+            # Send the request
+            with self.http_client as client:
+                response = client.post("queryTransactionList", xml_request)
+                xml_response = response.text
+
+            # Parse response
+            parsed_response = self._parse_response_from_xml(xml_response, QueryTransactionListResponse)
+            
+            transaction_count = len(parsed_response.transaction_list_result.transaction) if parsed_response.transaction_list_result else 0
+            logger.info(f"✓ Found {transaction_count} transactions on page {page}")
+            return parsed_response
+            
+        except Exception as e:
+            logger.error(f"Transaction list query failed for page {page}: {e}")
+            if isinstance(e, (NavApiException, NavValidationException)):
+                raise
+            raise NavApiException(f"Transaction list query failed: {e}")
+
     def get_token(self) -> TokenExchangeResponse:
         """
         Get exchange token from NAV API using xsdata-generated dataclasses.
@@ -1469,6 +1583,279 @@ class NavOnlineInvoiceClient:
             raise NavApiException(
                 f"Unexpected error during data retrieval: {str(e)}"
             )
+
+    def _collect_transaction_list_for_range(
+        self, 
+        start_date: datetime, 
+        end_date: datetime, 
+        request_status: Optional[RequestStatusType] = None
+    ) -> List[TransactionType]:
+        """
+        Collect all transactions for a given date range by iterating through all pages.
+        
+        Args:
+            start_date: Start date for the query range
+            end_date: End date for the query range
+            request_status: Filter by request status (optional)
+            
+        Returns:
+            List[TransactionType]: All transactions found in the date range
+        """
+        all_transactions = []
+        page = 1
+        
+        while True:
+            logger.info(f"Fetching transaction list page {page}...")
+            
+            response = self.query_transaction_list(
+                page=page,
+                start_date=start_date,
+                end_date=end_date,
+                request_status=request_status
+            )
+            
+            if not response.transaction_list_result or not response.transaction_list_result.transaction:
+                logger.info(f"No more transactions found on page {page}")
+                break
+                
+            transactions = response.transaction_list_result.transaction
+            all_transactions.extend(transactions)
+            
+            logger.info(f"Found {len(transactions)} transactions on page {page}")
+            
+            # Check if there are more pages
+            current_page = response.transaction_list_result.current_page
+            available_page = response.transaction_list_result.available_page
+            
+            if current_page >= available_page:
+                logger.info(f"Reached last page ({available_page})")
+                break
+                
+            page += 1
+        
+        logger.info(f"Total transactions collected: {len(all_transactions)}")
+        return all_transactions
+
+    def _process_single_transaction_with_status(
+        self,
+        transaction: TransactionType
+    ) -> Optional[QueryTransactionStatusResponse]:
+        """
+        Process a single transaction by fetching its detailed status.
+        
+        Args:
+            transaction: The transaction to process
+            
+        Returns:
+            Optional[QueryTransactionStatusResponse]: Transaction status response or None if failed
+        """
+        try:
+            transaction_id = transaction.transaction_id
+            logger.debug(f"Processing transaction: {transaction_id}")
+            
+            # Query transaction status with return_original_request=True for detailed info
+            status_response = self.query_transaction_status(
+                transaction_id=transaction_id,
+                return_original_request=True
+            )
+            
+            return status_response
+            
+        except Exception as e:
+            logger.error(f"Failed to process transaction {transaction.transaction_id}: {e}")
+            return None
+
+    def _process_transactions_with_status(
+        self,
+        transactions: List[TransactionType],
+        use_threading: bool = False,
+        max_workers: int = 4
+    ) -> List[QueryTransactionStatusResponse]:
+        """
+        Process multiple transactions by fetching their detailed status.
+        
+        Args:
+            transactions: List of transactions to process
+            use_threading: Whether to use threading for parallel processing
+            max_workers: Maximum number of threads for parallel processing
+            
+        Returns:
+            List[QueryTransactionStatusResponse]: List of transaction status responses
+        """
+        if not transactions:
+            return []
+            
+        status_responses = []
+        
+        # Store transaction IDs to maintain order
+        transaction_ids = []
+        
+        if use_threading and len(transactions) > 1:
+            logger.info(f"Processing {len(transactions)} transactions with threading (max_workers={max_workers})")
+            
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # Submit all tasks
+                future_to_transaction = {
+                    executor.submit(self._process_single_transaction_with_status, transaction): transaction
+                    for transaction in transactions
+                }
+                
+                # Collect results as they complete
+                for future in as_completed(future_to_transaction):
+                    transaction = future_to_transaction[future]
+                    try:
+                        status_response = future.result()
+                        if status_response:
+                            status_responses.append(status_response)
+                            transaction_ids.append(transaction.transaction_id)
+                    except Exception as e:
+                        logger.error(f"Thread failed for transaction {transaction.transaction_id}: {e}")
+        else:
+            # Sequential processing
+            logger.info(f"Processing {len(transactions)} transactions sequentially...")
+            for transaction in transactions:
+                status_response = self._process_single_transaction_with_status(transaction)
+                if status_response:
+                    status_responses.append(status_response)
+                    transaction_ids.append(transaction.transaction_id)
+        
+        logger.info(f"Successfully processed {len(status_responses)} transactions")
+        
+        # Store transaction IDs as an attribute for use in Excel export
+        self._last_processed_transaction_ids = transaction_ids
+        
+        return status_responses
+
+    def get_all_transaction_data_for_date_range(
+        self,
+        start_date: datetime,
+        end_date: datetime,
+        request_status: Optional[RequestStatusType] = None,
+        use_threading: bool = False,
+        max_workers: int = 4
+    ) -> List[QueryTransactionStatusResponse]:
+        """
+        Get all transaction data with detailed status for a given date range.
+        
+        Args:
+            start_date: Start date for the query range
+            end_date: End date for the query range
+            request_status: Filter by request status (optional)
+            use_threading: Whether to use threading for parallel processing
+            max_workers: Maximum number of threads for parallel processing
+            
+        Returns:
+            List[QueryTransactionStatusResponse]: List of transaction status responses with detailed info
+            
+        Raises:
+            NavValidationException: If parameters are invalid
+            NavApiException: If API requests fail
+        """
+        if start_date > end_date:
+            raise NavValidationException("Start date must be before end date")
+
+        # Check if date range needs to be split
+        date_diff = (end_date - start_date).days
+        if date_diff > MAX_DATE_RANGE_DAYS:
+            logger.info(
+                f"Date range ({date_diff} days) exceeds maximum ({MAX_DATE_RANGE_DAYS} days). "
+                "Splitting into smaller ranges."
+            )
+            
+            # Split date range into chunks
+            date_ranges = split_date_range(
+                start_date.strftime("%Y-%m-%d"),
+                end_date.strftime("%Y-%m-%d"),
+                MAX_DATE_RANGE_DAYS
+            )
+            
+            logger.info(f"Split into {len(date_ranges)} date ranges")
+            
+            all_status_responses = []
+            
+            # Process each date range
+            for i, (range_start_str, range_end_str) in enumerate(date_ranges):
+                range_start = datetime.strptime(range_start_str, "%Y-%m-%d")
+                range_end = datetime.strptime(range_end_str, "%Y-%m-%d")
+                
+                logger.info(f"Processing date range {i+1}/{len(date_ranges)}: {range_start.date()} to {range_end.date()}")
+                
+                # Get transactions for this range
+                range_responses = self._get_transaction_data_for_single_range(
+                    start_date=range_start,
+                    end_date=range_end,
+                    request_status=request_status,
+                    use_threading=use_threading,
+                    max_workers=max_workers
+                )
+                
+                all_status_responses.extend(range_responses)
+                logger.info(f"Found {len(range_responses)} transactions in range {i+1}")
+            
+            if not all_status_responses:
+                logger.info("No transactions found in any of the date ranges")
+                return []
+                
+            logger.info(f"🎯 Collected total of {len(all_status_responses)} transactions from all ranges")
+            return all_status_responses
+
+        # For single date range (≤ 35 days), use the original logic
+        return self._get_transaction_data_for_single_range(
+            start_date, end_date, request_status, use_threading, max_workers
+        )
+
+    def _get_transaction_data_for_single_range(
+        self,
+        start_date: datetime,
+        end_date: datetime,
+        request_status: Optional[RequestStatusType] = None,
+        use_threading: bool = False,
+        max_workers: int = 4
+    ) -> List[QueryTransactionStatusResponse]:
+        """
+        Get transaction data for a single date range (≤ 35 days).
+        
+        Args:
+            start_date: Start date for the query range
+            end_date: End date for the query range
+            request_status: Filter by request status (optional)
+            use_threading: Whether to use threading for parallel processing
+            max_workers: Maximum number of threads for parallel processing
+            
+        Returns:
+            List[QueryTransactionStatusResponse]: List of transaction status responses
+        """
+        try:
+            logger.info(f"Starting transaction data retrieval for date range: {start_date.date()} to {end_date.date()}")
+            
+            # Step 1: Collect all transactions for the date range
+            transactions = self._collect_transaction_list_for_range(
+                start_date=start_date,
+                end_date=end_date,
+                request_status=request_status
+            )
+            
+            if not transactions:
+                logger.info("No transactions found in the specified date range")
+                return []
+            
+            # Step 2: Process transactions to get detailed status information
+            status_responses = self._process_transactions_with_status(
+                transactions=transactions,
+                use_threading=use_threading,
+                max_workers=max_workers
+            )
+            
+            logger.info(f"✅ Transaction data retrieval completed: {len(status_responses)} transactions processed")
+            return status_responses
+            
+        except (NavValidationException, NavApiException):
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error in _get_transaction_data_for_single_range: {e}")
+            raise NavApiException(f"Failed to retrieve transaction data: {e}")
 
     def create_manage_annulment_request(
         self,
@@ -2975,6 +3362,77 @@ class NavOnlineInvoiceClient:
                 raise
             logger.error(f"Excel to NAV annulment processing failed: {e}")
             raise NavApiException(f"Failed to process Excel to NAV annulment results: {e}")
+
+    def export_transactions_to_excel(
+        self,
+        start_date: datetime,
+        end_date: datetime,
+        output_file: str,
+        request_status: Optional[RequestStatusType] = None,
+        use_threading: bool = False,
+        max_workers: int = 4
+    ) -> int:
+        """
+        Export transaction data to Excel file for a given date range.
+        
+        This method retrieves all transactions for the specified date range,
+        gets detailed status information for each transaction, and exports
+        everything to an Excel file with 3 sheets:
+        - Fejléc adatok: Invoice header information
+        - Tétel adatok: Invoice line item information  
+        - Tranzakció Státusz: Transaction status, warnings, and errors
+        
+        Args:
+            start_date: Start date for the query range
+            end_date: End date for the query range
+            output_file: Path where the Excel file should be saved
+            request_status: Filter by request status (optional)
+            use_threading: Whether to use threading for improved performance (default: False)
+            max_workers: Maximum number of threads for parallel processing (default: 4)
+            
+        Returns:
+            int: Number of transactions exported
+            
+        Raises:
+            NavValidationException: If parameters are invalid
+            NavApiException: If API requests fail
+            ExcelProcessingException: If Excel export fails
+        """
+        try:
+            logger.info(f"Starting transaction Excel export for date range: {start_date.date()} to {end_date.date()}")
+            
+            # Get transaction data with detailed status information
+            transaction_responses = self.get_all_transaction_data_for_date_range(
+                start_date=start_date,
+                end_date=end_date,
+                request_status=request_status,
+                use_threading=use_threading,
+                max_workers=max_workers
+            )
+            
+            if not transaction_responses:
+                logger.info("No transactions found to export")
+                # Create empty Excel file with headers
+                exporter = TransactionExcelExporter()
+                exporter.export_to_excel([], output_file, [])
+                logger.info(f"✅ Created empty Excel template at {output_file}")
+                return 0
+                
+            logger.info(f"📄 Starting Excel export of {len(transaction_responses)} transactions...")
+            
+            # Export to Excel with transaction IDs
+            exporter = TransactionExcelExporter()
+            transaction_ids = getattr(self, '_last_processed_transaction_ids', None)
+            exporter.export_to_excel(transaction_responses, output_file, transaction_ids)
+            
+            logger.info(f"✅ Successfully exported {len(transaction_responses)} transactions to {output_file}")
+            return len(transaction_responses)
+            
+        except Exception as e:
+            if isinstance(e, (NavValidationException, NavApiException)):
+                raise
+            logger.error(f"Transaction Excel export failed: {e}")
+            raise NavApiException(f"Failed to export transactions to Excel: {e}")
 
     def close(self):
         """Close the HTTP client."""
