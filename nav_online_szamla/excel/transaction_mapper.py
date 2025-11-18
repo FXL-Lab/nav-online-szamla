@@ -9,7 +9,7 @@ import logging
 import base64
 import gzip
 from datetime import datetime
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Any
 from xml.etree import ElementTree as ET
 
 from ..models import QueryTransactionStatusResponse, InvoiceData, ManageInvoiceOperationType
@@ -82,14 +82,18 @@ class TransactionFieldMapper:
                     # Extract invoice data from original request if available
                     invoice_data = self._extract_invoice_data_from_original_request(result)
                     if invoice_data:
-                        # Convert invoice data to header and line rows
-                        operation_type = self._extract_operation_type(result)
-                        
-                        header_row = self.invoice_mapper.invoice_data_to_header_row(invoice_data, operation_type)
-                        header_rows.append(header_row)
-                        
-                        line_row_list = self.invoice_mapper.invoice_data_to_line_rows(invoice_data, operation_type)
-                        line_rows.extend(line_row_list)
+                        # Check if this is a full InvoiceData object or just an AnnulmentData
+                        if hasattr(invoice_data, 'invoice_issue_date'):
+                            # This is a full InvoiceData object - process header and lines
+                            operation_type = self._extract_operation_type(result)
+                            
+                            header_row = self.invoice_mapper.invoice_data_to_header_row(invoice_data, operation_type)
+                            header_rows.append(header_row)
+                            
+                            line_row_list = self.invoice_mapper.invoice_data_to_line_rows(invoice_data, operation_type)
+                            line_rows.extend(line_row_list)
+                        # For AnnulmentData objects, we skip header/line processing since annulments 
+                        # only reference the original invoice - they don't contain invoice structure
                     
                     # Create status row for this result
                     status_row = self._create_status_row(transaction_response, result, transaction_id)
@@ -135,22 +139,22 @@ class TransactionFieldMapper:
         except Exception:
             return ManageInvoiceOperationType.CREATE
     
-    def _extract_invoice_data_from_original_request(self, result) -> Optional[InvoiceData]:
+    def _extract_invoice_data_from_original_request(self, result) -> Optional[Any]:
         """
-        Extract InvoiceData from the originalRequest field of a processing result.
+        Extract InvoiceData or InvoiceAnnulment from the originalRequest field of a processing result.
         
         Args:
             result: Processing result object that may contain originalRequest
             
         Returns:
-            Optional[InvoiceData]: Extracted invoice data or None
+            Optional[Any]: Extracted invoice data/annulment data or None
         """
         try:
             # Get the original request
             original_request = getattr(result, 'original_request', None)
             if not original_request:
                 return None
-            
+
             # Check if content is compressed
             compressed = getattr(result, 'compressed_content_indicator', False)
             
@@ -186,11 +190,10 @@ class TransactionFieldMapper:
             if compressed:
                 xml_data = gzip.decompress(xml_data)
             
-            # Parse XML to find InvoiceData element
+            # Parse XML to find InvoiceData or InvoiceAnnulment element
             root = ET.fromstring(xml_data)
             
-            # Look for InvoiceData elements - this should be the root element
-            # since the original_request contains the InvoiceData directly
+            # Look for InvoiceData elements first (regular transactions)
             if root.tag.endswith('InvoiceData'):
                 invoice_data_element = root
             else:
@@ -201,19 +204,46 @@ class TransactionFieldMapper:
                         invoice_data_element = elem
                         break
             
-            if invoice_data_element is None:
-                logger.warning("No InvoiceData element found in original request")
-                return None
+            if invoice_data_element is not None:
+                # Convert XML element back to InvoiceData object using xsdata
+                context = XmlContext()
+                parser = XmlParser(context=context)
+                
+                # Convert the XML element to string and parse it as InvoiceData
+                invoice_xml = ET.tostring(invoice_data_element, encoding='unicode')
+                invoice_data = parser.from_string(invoice_xml, InvoiceData)
+                
+                return invoice_data
             
-            # Convert XML element back to InvoiceData object using xsdata
-            context = XmlContext()
-            parser = XmlParser(context=context)
+            # Look for InvoiceAnnulment elements (technical annulment transactions)
+            annulment_element = None
+            if root.tag.endswith('InvoiceAnnulment'):
+                annulment_element = root
+            else:
+                # If not direct InvoiceAnnulment, search for it
+                for elem in root.iter():
+                    if elem.tag.endswith('InvoiceAnnulment'):
+                        annulment_element = elem
+                        break
             
-            # Convert the XML element to string and parse it as InvoiceData
-            invoice_xml = ET.tostring(invoice_data_element, encoding='unicode')
-            invoice_data = parser.from_string(invoice_xml, InvoiceData)
+            if annulment_element is not None:
+                # For technical annulments, extract the annulmentReference as invoice number
+                annulment_ref = None
+                for elem in annulment_element.iter():
+                    if elem.tag.endswith('annulmentReference'):
+                        annulment_ref = elem.text
+                        break
+                
+                if annulment_ref:
+                    # Create a minimal object with invoice_number attribute to match InvoiceData interface
+                    class AnnulmentData:
+                        def __init__(self, invoice_number: str):
+                            self.invoice_number = invoice_number
+                    
+                    return AnnulmentData(annulment_ref)
             
-            return invoice_data
+            logger.warning("No InvoiceData or InvoiceAnnulment element found in original request")
+            return None
             
         except Exception as e:
             logger.error(f"Failed to extract invoice data from original request: {e}")
