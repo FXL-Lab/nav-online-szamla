@@ -47,9 +47,12 @@ class TransactionExcelExporter:
             ExcelProcessingException: If export fails
         """
         try:
-            # Validate input
+            # Handle empty data gracefully by creating template file (similar to invoice exporter)
             if not transaction_responses:
-                raise ExcelProcessingException("No transaction data provided")
+                logger.info(f"No transaction data provided, creating empty Excel template: {file_path}")
+                self._create_excel_file([], [], [], file_path)
+                logger.info(f"Empty Excel template created successfully: {file_path}")
+                return
                 
             logger.info(f"Starting Excel export for {len(transaction_responses)} transactions to {file_path}")
             
