@@ -59,9 +59,11 @@ class ExcelFieldMapper:
         
         # Payment methods
         'payment_method': {
-            'TRANSFER': 'Banki átutalás',
+            'TRANSFER': 'Átutalás',
             'CASH': 'Készpénz',
             'CARD': 'Bankkártya, hitelkártya, egyéb készpénz helyettesítő eszköz',
+            'VOUCHER': 'Utalvány, váltó, egyéb pénzhelyettesítő eszköz',
+            'OTHER': 'Egyéb'
         },
         
         # Invoice categories
