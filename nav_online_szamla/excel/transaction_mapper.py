@@ -373,7 +373,7 @@ class TransactionFieldMapper:
                 result_code = messages.validation_result_code.value if messages.validation_result_code else "UNKNOWN"
                 error_code = messages.validation_error_code or ""
                 message = messages.message or ""
-                message_strings.append(f"{result_code}:{error_code}:{message}")
+                message_strings.append(f"{result_code}|:{error_code}|:{message}")
             
             return "||".join(message_strings) if message_strings else None
                     
