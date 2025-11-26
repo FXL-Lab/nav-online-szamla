@@ -149,28 +149,16 @@ class TransactionStatusRow:
     
     # Transaction identification
     transaction_id: Optional[str] = None  # Tranzakció azonosító
-    request_id: Optional[str] = None  # Kérés azonosító
     timestamp: Optional[str] = None  # Időbélyeg
     
     # Invoice reference information
     invoice_number: Optional[str] = None  # Számla sorszáma
-    invoice_operation: Optional[str] = None  # Számla művelet
     invoice_status: Optional[str] = None  # Számla státusz
     
     # Transaction status
     transaction_status: Optional[str] = None  # Tranzakció státusz (RECEIVED, PROCESSING, SAVED, FINISHED, NOTIFIED)
-    completion_date: Optional[str] = None  # Befejezés dátuma
     
     # Processing results
     business_validation_messages: Optional[str] = None  # Üzleti validációs üzenetek
     technical_validation_messages: Optional[str] = None  # Technikai validációs üzenetek
     
-    # Error and warning information
-    error_code: Optional[str] = None  # Hibakód
-    error_message: Optional[str] = None  # Hibaüzenet
-    warning_messages: Optional[str] = None  # Figyelmeztető üzenetek
-    info_messages: Optional[str] = None  # Információs üzenetek
-    
-    # Additional processing details
-    batch_index: Optional[int] = None  # Köteg index
-    original_request_version: Optional[str] = None  # Eredeti kérés verzió

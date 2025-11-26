@@ -261,10 +261,8 @@ class TransactionFieldMapper:
         """
         return TransactionStatusRow(
             transaction_id=getattr(transaction_response, 'transaction_id', None),
-            request_id=getattr(transaction_response, 'request_id', None),
             timestamp=self._format_timestamp(getattr(transaction_response, 'timestamp', None)),
             transaction_status="UNKNOWN",
-            error_message="No processing results available"
         )
     
     def _create_status_row(
@@ -286,7 +284,6 @@ class TransactionFieldMapper:
         try:
             # Get basic identifiers from response header and parameters
             transaction_id = transaction_id or "n/a"  # Use provided transaction_id
-            request_id = getattr(transaction_response.header, 'request_id', "n/a") if hasattr(transaction_response, 'header') else "n/a"
             timestamp = self._format_timestamp(getattr(transaction_response.header, 'timestamp', None)) if hasattr(transaction_response, 'header') else "n/a"
             
             # Extract invoice number from original request if available
@@ -295,9 +292,6 @@ class TransactionFieldMapper:
                 invoice_data = self._extract_invoice_data_from_original_request(result)
                 if invoice_data and hasattr(invoice_data, 'invoice_number'):
                     invoice_number = invoice_data.invoice_number
-            
-            # Get operation information - determine from context
-            invoice_operation = "CREATE"  # Most transactions are invoice creation operations
             
             # Get invoice status from processing result
             invoice_status = "n/a"
@@ -308,52 +302,19 @@ class TransactionFieldMapper:
             business_validation_messages = self._extract_validation_messages(result, 'business_validation_messages')
             technical_validation_messages = self._extract_validation_messages(result, 'technical_validation_messages')
             
-            # Extract error information from business validation messages
-            error_code = "n/a"
-            error_message = "n/a"
-            
-            # Check business validation messages for errors
-            if hasattr(result, 'business_validation_messages') and result.business_validation_messages:
-                for validation_msg in result.business_validation_messages:
-                    if hasattr(validation_msg, 'validation_error_code'):
-                        error_code = validation_msg.validation_error_code
-                    if hasattr(validation_msg, 'message'):
-                        error_message = validation_msg.message
-                    break  # Take the first error
-            
-            # Warning and info messages not available in this structure
-            warning_messages = "n/a"
-            info_messages = "n/a"
-            
-            # Get completion date - not available in processing result
-            completion_date = "n/a"
-            
             # Get transaction status from main response result
             transaction_status = "n/a"
             if hasattr(transaction_response, 'result') and hasattr(transaction_response.result, 'func_code'):
                 transaction_status = str(transaction_response.result.func_code.value) if hasattr(transaction_response.result.func_code, 'value') else str(transaction_response.result.func_code)
             
-            # Get batch index and result index from result
-            batch_index = getattr(result, 'batch_index', "n/a")
-            result_index = getattr(result, 'index', "n/a")
-            
             return TransactionStatusRow(
                 transaction_id=transaction_id,
-                request_id=request_id,
                 timestamp=timestamp,
                 invoice_number=invoice_number,
-                invoice_operation=invoice_operation,
                 invoice_status=invoice_status,
                 transaction_status=transaction_status,
-                completion_date=completion_date,
                 business_validation_messages=business_validation_messages,
                 technical_validation_messages=technical_validation_messages,
-                error_code=error_code,
-                error_message=error_message,
-                warning_messages=warning_messages,
-                info_messages=info_messages,
-                batch_index=batch_index,
-                original_request_version=getattr(result, 'original_request_version', "n/a") if hasattr(result, 'original_request_version') else "n/a"
             )
             
         except Exception as e:
@@ -377,10 +338,9 @@ class TransactionFieldMapper:
         """
         return TransactionStatusRow(
             transaction_id=getattr(transaction_response, 'transaction_id', None),
-            request_id=getattr(transaction_response, 'request_id', None),
             timestamp=self._format_timestamp(getattr(transaction_response, 'timestamp', None)),
             transaction_status="ERROR",
-            error_message=error_message
+            technical_validation_messages=error_message
         )
     
     def _extract_validation_messages(self, result, field_name: str) -> Optional[str]:
@@ -392,32 +352,30 @@ class TransactionFieldMapper:
             field_name: Name of the field containing messages
             
         Returns:
-            Optional[str]: Concatenated messages or None
+            Optional[str]: Concatenated messages in format "result_code:validation_error_code:message | ..." or None
         """
         try:
             messages = getattr(result, field_name, None)
             if not messages:
                 return None
             
+            message_strings = []
+            
+            # Handle both single message and list of messages
             if isinstance(messages, list):
-                # Concatenate list of messages
-                message_strings = []
                 for msg in messages:
-                    if hasattr(msg, 'message'):
-                        message_strings.append(str(msg.message))
-                    elif hasattr(msg, 'text'):
-                        message_strings.append(str(msg.text))
-                    else:
-                        message_strings.append(str(msg))
-                return " | ".join(message_strings) if message_strings else None
+                    result_code = msg.validation_result_code.value if msg.validation_result_code else "UNKNOWN"
+                    error_code = msg.validation_error_code or ""
+                    message = msg.message or ""
+                    message_strings.append(f"{result_code}|:{error_code}|:{message}")
             else:
                 # Single message
-                if hasattr(messages, 'message'):
-                    return str(messages.message)
-                elif hasattr(messages, 'text'):
-                    return str(messages.text)
-                else:
-                    return str(messages)
+                result_code = messages.validation_result_code.value if messages.validation_result_code else "UNKNOWN"
+                error_code = messages.validation_error_code or ""
+                message = messages.message or ""
+                message_strings.append(f"{result_code}:{error_code}:{message}")
+            
+            return "||".join(message_strings) if message_strings else None
                     
         except Exception as e:
             logger.warning(f"Failed to extract {field_name}: {e}")

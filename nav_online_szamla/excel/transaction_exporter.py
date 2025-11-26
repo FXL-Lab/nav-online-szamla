@@ -277,21 +277,12 @@ class TransactionExcelExporter:
         # Create transaction status columns mapping
         status_columns = {
             'transaction_id': 'Tranzakció azonosító',
-            'request_id': 'Kérés azonosító',
             'timestamp': 'Időbélyeg',
             'invoice_number': 'Számla sorszáma',
-            'invoice_operation': 'Számla művelet',
             'invoice_status': 'Számla státusz',
             'transaction_status': 'Tranzakció státusz',
-            'completion_date': 'Befejezés dátuma',
             'business_validation_messages': 'Üzleti validációs üzenetek',
             'technical_validation_messages': 'Technikai validációs üzenetek',
-            'error_code': 'Hibakód',
-            'error_message': 'Hibaüzenet',
-            'warning_messages': 'Figyelmeztető üzenetek',
-            'info_messages': 'Információs üzenetek',
-            'batch_index': 'Köteg index',
-            'original_request_version': 'Eredeti kérés verzió',
         }
 
         # Convert to DataFrame and write
@@ -423,19 +414,10 @@ class TransactionExcelExporter:
         """Convert TransactionStatusRow to dictionary."""
         return {
             'transaction_id': row.transaction_id,
-            'request_id': row.request_id,
             'timestamp': row.timestamp,
             'invoice_number': row.invoice_number,
-            'invoice_operation': row.invoice_operation,
             'invoice_status': row.invoice_status,
             'transaction_status': row.transaction_status,
-            'completion_date': row.completion_date,
             'business_validation_messages': row.business_validation_messages,
             'technical_validation_messages': row.technical_validation_messages,
-            'error_code': row.error_code,
-            'error_message': row.error_message,
-            'warning_messages': row.warning_messages,
-            'info_messages': row.info_messages,
-            'batch_index': row.batch_index,
-            'original_request_version': row.original_request_version,
         }
