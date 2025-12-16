@@ -307,6 +307,11 @@ class TransactionFieldMapper:
             if hasattr(transaction_response, 'result') and hasattr(transaction_response.result, 'func_code'):
                 transaction_status = str(transaction_response.result.func_code.value) if hasattr(transaction_response.result.func_code, 'value') else str(transaction_response.result.func_code)
             
+            # get operation type
+            operation_type = 'CREATE'
+            if hasattr(invoice_data, 'invoice_main') and hasattr(invoice_data.invoice_main, 'invoice') and hasattr(invoice_data.invoice_main.invoice, 'invoice_reference') and invoice_data.invoice_main.invoice.invoice_reference is not None:
+                operation_type = 'MODIFY/STORNO'
+
             return TransactionStatusRow(
                 transaction_id=transaction_id,
                 timestamp=timestamp,
@@ -315,6 +320,7 @@ class TransactionFieldMapper:
                 transaction_status=transaction_status,
                 business_validation_messages=business_validation_messages,
                 technical_validation_messages=technical_validation_messages,
+                operation_type=operation_type
             )
             
         except Exception as e:

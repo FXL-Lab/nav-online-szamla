@@ -154,6 +154,7 @@ class TransactionStatusRow:
     # Invoice reference information
     invoice_number: Optional[str] = None  # Számla sorszáma
     invoice_status: Optional[str] = None  # Számla státusz
+    operation_type: Optional[str] = None  # Művelet típusa
     
     # Transaction status
     transaction_status: Optional[str] = None  # Tranzakció státusz (RECEIVED, PROCESSING, SAVED, FINISHED, NOTIFIED)
