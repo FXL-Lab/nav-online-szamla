@@ -1687,13 +1687,18 @@ class NavOnlineInvoiceClient:
             
         status_responses = []
         
-        # Store transaction IDs to maintain order
+        # Store transaction metadata in parallel lists to maintain order
         transaction_ids = []
+        request_statuses = []
+        technical_annulments = []
         
         if use_threading and len(transactions) > 1:
             logger.info(f"Processing {len(transactions)} transactions with threading (max_workers={max_workers})")
             
             from concurrent.futures import ThreadPoolExecutor, as_completed
+            
+            # Create a mapping to preserve order
+            transaction_map = {transaction.transaction_id: transaction for transaction in transactions}
             
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 # Submit all tasks
@@ -1703,15 +1708,25 @@ class NavOnlineInvoiceClient:
                 }
                 
                 # Collect results as they complete
+                temp_results = []
                 for future in as_completed(future_to_transaction):
                     transaction = future_to_transaction[future]
                     try:
                         status_response = future.result()
                         if status_response:
-                            status_responses.append(status_response)
-                            transaction_ids.append(transaction.transaction_id)
+                            temp_results.append((transaction, status_response))
                     except Exception as e:
                         logger.error(f"Thread failed for transaction {transaction.transaction_id}: {e}")
+                
+                # Sort results to maintain original order
+                temp_results.sort(key=lambda x: transactions.index(x[0]))
+                
+                # Extract into parallel lists
+                for transaction, status_response in temp_results:
+                    status_responses.append(status_response)
+                    transaction_ids.append(transaction.transaction_id)
+                    request_statuses.append(transaction.request_status.value if transaction.request_status else None)
+                    technical_annulments.append(transaction.technical_annulment)
         else:
             # Sequential processing
             logger.info(f"Processing {len(transactions)} transactions sequentially...")
@@ -1720,11 +1735,15 @@ class NavOnlineInvoiceClient:
                 if status_response:
                     status_responses.append(status_response)
                     transaction_ids.append(transaction.transaction_id)
+                    request_statuses.append(transaction.request_status.value if transaction.request_status else None)
+                    technical_annulments.append(transaction.technical_annulment)
         
         logger.info(f"Successfully processed {len(status_responses)} transactions")
         
-        # Store transaction IDs as an attribute for use in Excel export
+        # Store transaction metadata as attributes for use in Excel export
         self._last_processed_transaction_ids = transaction_ids
+        self._last_processed_request_statuses = request_statuses
+        self._last_processed_technical_annulments = technical_annulments
         
         return status_responses
 
@@ -3420,10 +3439,18 @@ class NavOnlineInvoiceClient:
                 
             logger.info(f"📄 Starting Excel export of {len(transaction_responses)} transactions...")
             
-            # Export to Excel with transaction IDs
+            # Export to Excel with transaction metadata
             exporter = TransactionExcelExporter()
             transaction_ids = getattr(self, '_last_processed_transaction_ids', None)
-            exporter.export_to_excel(transaction_responses, output_file, transaction_ids)
+            request_statuses = getattr(self, '_last_processed_request_statuses', None)
+            technical_annulments = getattr(self, '_last_processed_technical_annulments', None)
+            exporter.export_to_excel(
+                transaction_responses, 
+                output_file, 
+                transaction_ids,
+                request_statuses,
+                technical_annulments
+            )
             
             logger.info(f"✅ Successfully exported {len(transaction_responses)} transactions to {output_file}")
             return len(transaction_responses)

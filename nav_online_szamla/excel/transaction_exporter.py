@@ -33,7 +33,9 @@ class TransactionExcelExporter:
         self, 
         transaction_responses: List[QueryTransactionStatusResponse], 
         file_path: str,
-        transaction_ids: List[str] = None
+        transaction_ids: List[str] = None,
+        request_statuses: List[str] = None,
+        technical_annulments: List[bool] = None
     ) -> None:
         """
         Export transaction data to Excel file with 3 sheets.
@@ -42,6 +44,8 @@ class TransactionExcelExporter:
             transaction_responses: List of transaction status responses
             file_path: Path where the Excel file should be saved
             transaction_ids: Optional list of transaction IDs corresponding to responses
+            request_statuses: Optional list of request statuses corresponding to responses
+            technical_annulments: Optional list of technical annulment flags corresponding to responses
             
         Raises:
             ExcelProcessingException: If export fails
@@ -68,10 +72,22 @@ class TransactionExcelExporter:
                     if transaction_ids and i < len(transaction_ids):
                         transaction_id = transaction_ids[i]
                     
+                    # Get request status from list if provided
+                    request_status = None
+                    if request_statuses and i < len(request_statuses):
+                        request_status = request_statuses[i]
+                    
+                    # Get technical annulment from list if provided
+                    technical_annulment = None
+                    if technical_annulments and i < len(technical_annulments):
+                        technical_annulment = technical_annulments[i]
+                    
                     # Extract invoice data and status information
                     transaction_header_rows, transaction_line_rows, transaction_status_rows = self.mapper.transaction_response_to_rows(
                         transaction_response, 
-                        transaction_id
+                        transaction_id,
+                        request_status,
+                        technical_annulment
                     )
                     
                     header_rows.extend(transaction_header_rows)
@@ -281,7 +297,8 @@ class TransactionExcelExporter:
             'invoice_number': 'Számla sorszáma',
             'invoice_status': 'Számla státusz',
             'operation_type': 'Művelet típusa',
-            'transaction_status': 'Tranzakció státusz',
+            'request_status': 'Feldolgozási státusza',
+            'technical_annulment': 'Technikai érvénytelenítés',
             'business_validation_messages': 'Üzleti validációs üzenetek',
             'technical_validation_messages': 'Technikai validációs üzenetek',
         }
@@ -419,7 +436,8 @@ class TransactionExcelExporter:
             'invoice_number': row.invoice_number,
             'invoice_status': row.invoice_status,
             'operation_type': row.operation_type,
-            'transaction_status': row.transaction_status,
+            'request_status': row.request_status,
+            'technical_annulment': row.technical_annulment,
             'business_validation_messages': row.business_validation_messages,
             'technical_validation_messages': row.technical_validation_messages,
         }

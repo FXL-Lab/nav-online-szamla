@@ -26,14 +26,39 @@ class TransactionFieldMapper:
     Handles mapping between QueryTransactionStatusResponse objects and Excel row structures.
     """
     
+    # Request status mapping to Hungarian
+    REQUEST_STATUS_MAPPING = {
+        'RECEIVED': 'Befogadva',
+        'PROCESSING': 'Feldolgozás alatt',
+        'SAVED': 'Elmentve',
+        'FINISHED': 'Feldolgozás befejezve',
+        'NOTIFIED': 'Lekérdezve',
+    }
+    
     def __init__(self):
         """Initialize the transaction field mapper."""
         self.invoice_mapper = ExcelFieldMapper()
     
+    def _map_request_status(self, status: Optional[str]) -> str:
+        """
+        Map request status enum value to Hungarian text.
+        
+        Args:
+            status: Request status value (e.g., 'RECEIVED', 'PROCESSING')
+            
+        Returns:
+            str: Hungarian translation or original value if not found
+        """
+        if not status or status == "n/a":
+            return "n/a"
+        return self.REQUEST_STATUS_MAPPING.get(status, status)
+    
     def transaction_response_to_rows(
         self, 
         transaction_response: QueryTransactionStatusResponse,
-        transaction_id: str = None
+        transaction_id: str = None,
+        request_status: str = None,
+        technical_annulment: bool = None
     ) -> Tuple[List[InvoiceHeaderRow], List[InvoiceLineRow], List[TransactionStatusRow]]:
         """
         Convert transaction status response to Excel row data.
@@ -41,6 +66,8 @@ class TransactionFieldMapper:
         Args:
             transaction_response: The transaction status response
             transaction_id: The original transaction ID from the transaction list
+            request_status: The request status from the transaction list
+            technical_annulment: Whether the transaction contains technical annulment
             
         Returns:
             Tuple of (header_rows, line_rows, status_rows)
@@ -58,7 +85,12 @@ class TransactionFieldMapper:
             processing_results = getattr(transaction_response, 'processing_results', None)
             if not processing_results:
                 # Create a basic status row even if no processing results
-                status_row = self._create_basic_status_row(transaction_response, transaction_id)
+                status_row = self._create_basic_status_row(
+                    transaction_response, 
+                    transaction_id,
+                    request_status,
+                    technical_annulment
+                )
                 status_rows.append(status_row)
                 return header_rows, line_rows, status_rows
             
@@ -96,7 +128,13 @@ class TransactionFieldMapper:
                         # only reference the original invoice - they don't contain invoice structure
                     
                     # Create status row for this result
-                    status_row = self._create_status_row(transaction_response, result, transaction_id)
+                    status_row = self._create_status_row(
+                        transaction_response, 
+                        result, 
+                        transaction_id,
+                        request_status,
+                        technical_annulment
+                    )
                     status_rows.append(status_row)
                     
                 except Exception as e:
@@ -249,27 +287,39 @@ class TransactionFieldMapper:
             logger.error(f"Failed to extract invoice data from original request: {e}")
             return None
     
-    def _create_basic_status_row(self, transaction_response: QueryTransactionStatusResponse) -> TransactionStatusRow:
+    def _create_basic_status_row(
+        self, 
+        transaction_response: QueryTransactionStatusResponse,
+        transaction_id: str = None,
+        request_status: str = None,
+        technical_annulment: bool = None
+    ) -> TransactionStatusRow:
         """
         Create a basic status row when no processing results are available.
         
         Args:
             transaction_response: The transaction status response
+            transaction_id: The original transaction ID from the transaction list
+            request_status: The request status from the transaction list
+            technical_annulment: Whether the transaction contains technical annulment
             
         Returns:
             TransactionStatusRow: Basic status row
         """
         return TransactionStatusRow(
-            transaction_id=getattr(transaction_response, 'transaction_id', None),
+            transaction_id=transaction_id or getattr(transaction_response, 'transaction_id', None),
             timestamp=self._format_timestamp(getattr(transaction_response, 'timestamp', None)),
-            transaction_status="UNKNOWN",
+            request_status=self._map_request_status(request_status) if request_status else "n/a",
+            technical_annulment=technical_annulment,
         )
     
     def _create_status_row(
         self, 
         transaction_response: QueryTransactionStatusResponse, 
         result,
-        transaction_id: str = None
+        transaction_id: str = None,
+        request_status: str = None,
+        technical_annulment: bool = None
     ) -> TransactionStatusRow:
         """
         Create a status row from transaction response and processing result.
@@ -277,6 +327,9 @@ class TransactionFieldMapper:
         Args:
             transaction_response: The transaction status response
             result: Individual processing result
+            transaction_id: The original transaction ID from the transaction list
+            request_status: The request status from the transaction list
+            technical_annulment: Whether the transaction contains technical annulment
             
         Returns:
             TransactionStatusRow: Status row with detailed information
@@ -302,11 +355,6 @@ class TransactionFieldMapper:
             business_validation_messages = self._extract_validation_messages(result, 'business_validation_messages')
             technical_validation_messages = self._extract_validation_messages(result, 'technical_validation_messages')
             
-            # Get transaction status from main response result
-            transaction_status = "n/a"
-            if hasattr(transaction_response, 'result') and hasattr(transaction_response.result, 'func_code'):
-                transaction_status = str(transaction_response.result.func_code.value) if hasattr(transaction_response.result.func_code, 'value') else str(transaction_response.result.func_code)
-            
             # get operation type
             operation_type = 'CREATE'
             if hasattr(invoice_data, 'invoice_main') and hasattr(invoice_data.invoice_main, 'invoice') and hasattr(invoice_data.invoice_main.invoice, 'invoice_reference') and invoice_data.invoice_main.invoice.invoice_reference is not None:
@@ -317,10 +365,11 @@ class TransactionFieldMapper:
                 timestamp=timestamp,
                 invoice_number=invoice_number,
                 invoice_status=invoice_status,
-                transaction_status=transaction_status,
+                operation_type=operation_type,
+                request_status=self._map_request_status(request_status),
+                technical_annulment=technical_annulment,
                 business_validation_messages=business_validation_messages,
-                technical_validation_messages=technical_validation_messages,
-                operation_type=operation_type
+                technical_validation_messages=technical_validation_messages
             )
             
         except Exception as e:
@@ -345,7 +394,7 @@ class TransactionFieldMapper:
         return TransactionStatusRow(
             transaction_id=getattr(transaction_response, 'transaction_id', None),
             timestamp=self._format_timestamp(getattr(transaction_response, 'timestamp', None)),
-            transaction_status="ERROR",
+            request_status="HIBA",
             technical_validation_messages=error_message
         )
     

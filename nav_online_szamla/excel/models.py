@@ -156,8 +156,9 @@ class TransactionStatusRow:
     invoice_status: Optional[str] = None  # Számla státusz
     operation_type: Optional[str] = None  # Művelet típusa
     
-    # Transaction status
-    transaction_status: Optional[str] = None  # Tranzakció státusz (RECEIVED, PROCESSING, SAVED, FINISHED, NOTIFIED)
+    # Request status
+    request_status: Optional[str] = None  # Feldolgozási státusza (RECEIVED, PROCESSING, SAVED, FINISHED, NOTIFIED)
+    technical_annulment: Optional[bool] = None  # Technikai érvénytelenítés
     
     # Processing results
     business_validation_messages: Optional[str] = None  # Üzleti validációs üzenetek
