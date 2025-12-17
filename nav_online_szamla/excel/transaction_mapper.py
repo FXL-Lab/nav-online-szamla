@@ -215,35 +215,58 @@ class TransactionFieldMapper:
             logger.debug(f"Compressed: {compressed}")
             
             # The original_request is BASE64 encoded XML data that needs to be decoded
+            xml_data = None
+            
             if isinstance(original_request, str):
-                # BASE64 decode first
+                # Try BASE64 decoding with padding fix
                 try:
-                    xml_data = base64.b64decode(original_request)
+                    # Fix padding if needed
+                    padded_request = original_request
+                    missing_padding = len(original_request) % 4
+                    if missing_padding:
+                        padded_request = original_request + '=' * (4 - missing_padding)
+                    xml_data = base64.b64decode(padded_request)
                 except Exception as e:
-                    logger.warning(f"Failed to BASE64 decode original request: {e}")
-                    return None
+                    logger.debug(f"BASE64 decode failed for string, trying as plain XML: {e}")
+                    # Maybe it's already plain XML
+                    xml_data = original_request.encode('utf-8')
+                    
             elif isinstance(original_request, bytes):
-                # Check if it's already decoded or still BASE64
+                # Try to parse as XML first (might already be decoded)
                 try:
-                    # Try to parse as XML first
                     ET.fromstring(original_request)
                     xml_data = original_request
                 except ET.ParseError:
-                    # If parsing failed, it might be BASE64 encoded
+                    # If parsing failed, try BASE64 decoding with padding fix
                     try:
-                        xml_data = base64.b64decode(original_request)
+                        # Fix padding if needed
+                        padded_request = original_request
+                        missing_padding = len(original_request) % 4
+                        if missing_padding:
+                            padded_request = original_request + b'=' * (4 - missing_padding)
+                        xml_data = base64.b64decode(padded_request)
                     except Exception as e:
-                        logger.warning(f"Failed to BASE64 decode bytes original request: {e}")
-                        return None
+                        logger.debug(f"BASE64 decode failed for bytes: {e}")
+                        # Use as-is
+                        xml_data = original_request
             else:
                 xml_data = str(original_request).encode('utf-8')
             
-            # Decompress if needed
+            # Decompress if needed (only if compressed flag is set)
             if compressed:
-                xml_data = gzip.decompress(xml_data)
+                try:
+                    xml_data = gzip.decompress(xml_data)
+                except gzip.BadGzipFile as e:
+                    logger.debug(f"Gzip decompress failed (data may not be compressed): {e}")
+                    # Data might not actually be compressed, continue with original
+                    pass
             
             # Parse XML to find InvoiceData or InvoiceAnnulment element
-            root = ET.fromstring(xml_data)
+            try:
+                root = ET.fromstring(xml_data)
+            except ET.ParseError as e:
+                logger.debug(f"Failed to parse XML from original request: {e}")
+                return None
             
             # Look for InvoiceData elements first (regular transactions)
             if root.tag.endswith('InvoiceData'):
