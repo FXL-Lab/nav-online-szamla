@@ -1793,6 +1793,9 @@ class NavOnlineInvoiceClient:
             logger.info(f"Split into {len(date_ranges)} date ranges")
             
             all_status_responses = []
+            all_transaction_ids = []
+            all_request_statuses = []
+            all_technical_annulments = []
             
             # Process each date range
             for i, (range_start_str, range_end_str) in enumerate(date_ranges):
@@ -1811,7 +1814,22 @@ class NavOnlineInvoiceClient:
                 )
                 
                 all_status_responses.extend(range_responses)
+                
+                # Collect metadata from this range
+                range_transaction_ids = getattr(self, '_last_processed_transaction_ids', [])
+                range_request_statuses = getattr(self, '_last_processed_request_statuses', [])
+                range_technical_annulments = getattr(self, '_last_processed_technical_annulments', [])
+                
+                all_transaction_ids.extend(range_transaction_ids)
+                all_request_statuses.extend(range_request_statuses)
+                all_technical_annulments.extend(range_technical_annulments)
+                
                 logger.info(f"Found {len(range_responses)} transactions in range {i+1}")
+            
+            # Store accumulated metadata for Excel export
+            self._last_processed_transaction_ids = all_transaction_ids
+            self._last_processed_request_statuses = all_request_statuses
+            self._last_processed_technical_annulments = all_technical_annulments
             
             if not all_status_responses:
                 logger.info("No transactions found in any of the date ranges")

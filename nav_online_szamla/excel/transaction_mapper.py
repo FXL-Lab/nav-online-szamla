@@ -214,48 +214,48 @@ class TransactionFieldMapper:
             logger.debug(f"Original request type: {type(original_request)}")
             logger.debug(f"Compressed: {compressed}")
             
-            # The original_request is BASE64 encoded XML data that needs to be decoded
+            # Convert to bytes if needed
             xml_data = None
             
             if isinstance(original_request, str):
-                # Try BASE64 decoding with padding fix
-                try:
-                    # Fix padding if needed
-                    padded_request = original_request
-                    missing_padding = len(original_request) % 4
-                    if missing_padding:
-                        padded_request = original_request + '=' * (4 - missing_padding)
-                    xml_data = base64.b64decode(padded_request)
-                except Exception as e:
-                    logger.debug(f"BASE64 decode failed for string, trying as plain XML: {e}")
-                    # Maybe it's already plain XML
-                    xml_data = original_request.encode('utf-8')
-                    
+                xml_data_bytes = original_request.encode('utf-8')
             elif isinstance(original_request, bytes):
-                # Try to parse as XML first (might already be decoded)
+                xml_data_bytes = original_request
+            else:
+                xml_data_bytes = str(original_request).encode('utf-8')
+            
+            # Check if data is already raw gzip (starts with gzip magic bytes)
+            is_gzip = xml_data_bytes[:2] == b'\x1f\x8b'
+            
+            if is_gzip:
+                # Data is already raw gzip bytes, skip BASE64 decoding
+                logger.debug("Detected raw gzip data, skipping BASE64 decode")
+                xml_data = xml_data_bytes
+            else:
+                # Try BASE64 decoding (data should be BASE64 encoded)
                 try:
-                    ET.fromstring(original_request)
-                    xml_data = original_request
+                    # Try to parse as XML first (might already be plain XML)
+                    ET.fromstring(xml_data_bytes)
+                    xml_data = xml_data_bytes
+                    logger.debug("Data is already plain XML")
                 except ET.ParseError:
-                    # If parsing failed, try BASE64 decoding with padding fix
+                    # Not plain XML, try BASE64 decoding with padding fix
                     try:
                         # Fix padding if needed
-                        padded_request = original_request
-                        missing_padding = len(original_request) % 4
+                        missing_padding = len(xml_data_bytes) % 4
                         if missing_padding:
-                            padded_request = original_request + b'=' * (4 - missing_padding)
-                        xml_data = base64.b64decode(padded_request)
+                            xml_data_bytes = xml_data_bytes + b'=' * (4 - missing_padding)
+                        xml_data = base64.b64decode(xml_data_bytes)
+                        logger.debug("Successfully BASE64 decoded")
                     except Exception as e:
-                        logger.debug(f"BASE64 decode failed for bytes: {e}")
-                        # Use as-is
-                        xml_data = original_request
-            else:
-                xml_data = str(original_request).encode('utf-8')
+                        logger.debug(f"BASE64 decode failed, using data as-is: {e}")
+                        xml_data = xml_data_bytes
             
-            # Decompress if needed (only if compressed flag is set)
-            if compressed:
+            # Decompress if needed (only if compressed flag is set or data is gzip)
+            if compressed or is_gzip:
                 try:
                     xml_data = gzip.decompress(xml_data)
+                    logger.debug("Successfully decompressed gzip data")
                 except gzip.BadGzipFile as e:
                     logger.debug(f"Gzip decompress failed (data may not be compressed): {e}")
                     # Data might not actually be compressed, continue with original
@@ -266,6 +266,13 @@ class TransactionFieldMapper:
                 root = ET.fromstring(xml_data)
             except ET.ParseError as e:
                 logger.debug(f"Failed to parse XML from original request: {e}")
+                return None
+            
+            # Check schema version - only v3.0 is supported
+            namespace = root.tag.split('}')[0].strip('{') if '}' in root.tag else ''
+            if '2.0' in namespace or '1.0' in namespace:
+                logger.warning(f"Skipping invoice data extraction - unsupported schema version in namespace: {namespace}")
+                logger.warning("Only API v3.0 invoice data can be fully parsed. Transaction status will still be exported.")
                 return None
             
             # Look for InvoiceData elements first (regular transactions)
@@ -322,6 +329,7 @@ class TransactionFieldMapper:
             
         except Exception as e:
             logger.error(f"Failed to extract invoice data from original request: {e}")
+            logger.error(f" Original request content: {result}")
             return None
     
     def _create_basic_status_row(
