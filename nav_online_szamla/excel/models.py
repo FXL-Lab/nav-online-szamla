@@ -158,7 +158,7 @@ class TransactionStatusRow:
     
     # Request status
     request_status: Optional[str] = None  # Feldolgozási státusza (RECEIVED, PROCESSING, SAVED, FINISHED, NOTIFIED)
-    technical_annulment: Optional[bool] = None  # Technikai érvénytelenítés
+    technical_annulment: Optional[str] = None  # Technikai érvénytelenítés (Igen/Nem)
     
     # Processing results
     business_validation_messages: Optional[str] = None  # Üzleti validációs üzenetek

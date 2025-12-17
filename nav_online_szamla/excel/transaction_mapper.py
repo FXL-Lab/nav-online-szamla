@@ -53,6 +53,20 @@ class TransactionFieldMapper:
             return "n/a"
         return self.REQUEST_STATUS_MAPPING.get(status, status)
     
+    def _map_boolean_to_hungarian(self, value: Optional[bool]) -> str:
+        """
+        Map boolean value to Hungarian text.
+        
+        Args:
+            value: Boolean value (True, False, or None)
+            
+        Returns:
+            str: "Igen" for True, "Nem" for False, "n/a" for None
+        """
+        if value is None:
+            return "n/a"
+        return "Igen" if value else "Nem"
+    
     def transaction_response_to_rows(
         self, 
         transaction_response: QueryTransactionStatusResponse,
@@ -310,7 +324,7 @@ class TransactionFieldMapper:
             transaction_id=transaction_id or getattr(transaction_response, 'transaction_id', None),
             timestamp=self._format_timestamp(getattr(transaction_response, 'timestamp', None)),
             request_status=self._map_request_status(request_status) if request_status else "n/a",
-            technical_annulment=technical_annulment,
+            technical_annulment=self._map_boolean_to_hungarian(technical_annulment),
         )
     
     def _create_status_row(
@@ -367,7 +381,7 @@ class TransactionFieldMapper:
                 invoice_status=invoice_status,
                 operation_type=operation_type,
                 request_status=self._map_request_status(request_status),
-                technical_annulment=technical_annulment,
+                technical_annulment=self._map_boolean_to_hungarian(technical_annulment),
                 business_validation_messages=business_validation_messages,
                 technical_validation_messages=technical_validation_messages
             )
