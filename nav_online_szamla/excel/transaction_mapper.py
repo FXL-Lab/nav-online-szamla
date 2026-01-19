@@ -72,7 +72,8 @@ class TransactionFieldMapper:
         transaction_response: QueryTransactionStatusResponse,
         transaction_id: str = None,
         request_status: str = None,
-        technical_annulment: bool = None
+        technical_annulment: bool = None,
+        ins_date: str = None
     ) -> Tuple[List[InvoiceHeaderRow], List[InvoiceLineRow], List[TransactionStatusRow]]:
         """
         Convert transaction status response to Excel row data.
@@ -82,6 +83,7 @@ class TransactionFieldMapper:
             transaction_id: The original transaction ID from the transaction list
             request_status: The request status from the transaction list
             technical_annulment: Whether the transaction contains technical annulment
+            ins_date: The submission timestamp (ins_date) from the transaction
             
         Returns:
             Tuple of (header_rows, line_rows, status_rows)
@@ -103,7 +105,8 @@ class TransactionFieldMapper:
                     transaction_response, 
                     transaction_id,
                     request_status,
-                    technical_annulment
+                    technical_annulment,
+                    ins_date
                 )
                 status_rows.append(status_row)
                 return header_rows, line_rows, status_rows
@@ -147,14 +150,15 @@ class TransactionFieldMapper:
                         result, 
                         transaction_id,
                         request_status,
-                        technical_annulment
+                        technical_annulment,
+                        ins_date
                     )
                     status_rows.append(status_row)
                     
                 except Exception as e:
                     logger.warning(f"Failed to process individual result in transaction {transaction_id}: {e}")
                     # Create error status row
-                    error_status_row = self._create_error_status_row(transaction_response, str(e))
+                    error_status_row = self._create_error_status_row(transaction_response, str(e), ins_date)
                     status_rows.append(error_status_row)
                     continue
             
@@ -163,7 +167,7 @@ class TransactionFieldMapper:
         except Exception as e:
             logger.error(f"Failed to convert transaction response {transaction_id}: {e}")
             # Create error status row
-            error_status_row = self._create_error_status_row(transaction_response, str(e))
+            error_status_row = self._create_error_status_row(transaction_response, str(e), ins_date)
             status_rows.append(error_status_row)
             return header_rows, line_rows, status_rows
     
@@ -337,7 +341,8 @@ class TransactionFieldMapper:
         transaction_response: QueryTransactionStatusResponse,
         transaction_id: str = None,
         request_status: str = None,
-        technical_annulment: bool = None
+        technical_annulment: bool = None,
+        ins_date: str = None
     ) -> TransactionStatusRow:
         """
         Create a basic status row when no processing results are available.
@@ -347,13 +352,14 @@ class TransactionFieldMapper:
             transaction_id: The original transaction ID from the transaction list
             request_status: The request status from the transaction list
             technical_annulment: Whether the transaction contains technical annulment
+            ins_date: The submission timestamp from the transaction
             
         Returns:
             TransactionStatusRow: Basic status row
         """
         return TransactionStatusRow(
             transaction_id=transaction_id or getattr(transaction_response, 'transaction_id', None),
-            timestamp=self._format_timestamp(getattr(transaction_response, 'timestamp', None)),
+            submission_timestamp=self._format_timestamp(ins_date),
             request_status=self._map_request_status(request_status) if request_status else "n/a",
             technical_annulment=self._map_boolean_to_hungarian(technical_annulment),
         )
@@ -364,7 +370,8 @@ class TransactionFieldMapper:
         result,
         transaction_id: str = None,
         request_status: str = None,
-        technical_annulment: bool = None
+        technical_annulment: bool = None,
+        ins_date: str = None
     ) -> TransactionStatusRow:
         """
         Create a status row from transaction response and processing result.
@@ -375,6 +382,7 @@ class TransactionFieldMapper:
             transaction_id: The original transaction ID from the transaction list
             request_status: The request status from the transaction list
             technical_annulment: Whether the transaction contains technical annulment
+            ins_date: The submission timestamp from the transaction
             
         Returns:
             TransactionStatusRow: Status row with detailed information
@@ -382,7 +390,7 @@ class TransactionFieldMapper:
         try:
             # Get basic identifiers from response header and parameters
             transaction_id = transaction_id or "n/a"  # Use provided transaction_id
-            timestamp = self._format_timestamp(getattr(transaction_response.header, 'timestamp', None)) if hasattr(transaction_response, 'header') else "n/a"
+            submission_timestamp = self._format_timestamp(ins_date)
             
             # Extract invoice number from original request if available
             invoice_number = "n/a"
@@ -407,7 +415,7 @@ class TransactionFieldMapper:
 
             return TransactionStatusRow(
                 transaction_id=transaction_id,
-                timestamp=timestamp,
+                submission_timestamp=submission_timestamp,
                 invoice_number=invoice_number,
                 invoice_status=invoice_status,
                 operation_type=operation_type,
@@ -419,12 +427,13 @@ class TransactionFieldMapper:
             
         except Exception as e:
             logger.error(f"Failed to create status row: {e}")
-            return self._create_error_status_row(transaction_response, str(e))
+            return self._create_error_status_row(transaction_response, str(e), ins_date)
     
     def _create_error_status_row(
         self, 
         transaction_response: QueryTransactionStatusResponse, 
-        error_message: str
+        error_message: str,
+        ins_date: str = None
     ) -> TransactionStatusRow:
         """
         Create an error status row when processing fails.
@@ -432,13 +441,14 @@ class TransactionFieldMapper:
         Args:
             transaction_response: The transaction status response
             error_message: Error message to include
+            ins_date: The submission timestamp from the transaction
             
         Returns:
             TransactionStatusRow: Error status row
         """
         return TransactionStatusRow(
             transaction_id=getattr(transaction_response, 'transaction_id', None),
-            timestamp=self._format_timestamp(getattr(transaction_response, 'timestamp', None)),
+            submission_timestamp=self._format_timestamp(ins_date),
             request_status="HIBA",
             technical_validation_messages=error_message
         )

@@ -149,7 +149,7 @@ class TransactionStatusRow:
     
     # Transaction identification
     transaction_id: Optional[str] = None  # Tranzakció azonosító
-    timestamp: Optional[str] = None  # Időbélyeg
+    submission_timestamp: Optional[str] = None  # Beküldés időpontja
     
     # Invoice reference information
     invoice_number: Optional[str] = None  # Számla sorszáma

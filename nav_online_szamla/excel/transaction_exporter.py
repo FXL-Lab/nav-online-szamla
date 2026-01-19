@@ -35,7 +35,8 @@ class TransactionExcelExporter:
         file_path: str,
         transaction_ids: List[str] = None,
         request_statuses: List[str] = None,
-        technical_annulments: List[bool] = None
+        technical_annulments: List[bool] = None,
+        ins_dates: List[str] = None
     ) -> None:
         """
         Export transaction data to Excel file with 3 sheets.
@@ -46,6 +47,7 @@ class TransactionExcelExporter:
             transaction_ids: Optional list of transaction IDs corresponding to responses
             request_statuses: Optional list of request statuses corresponding to responses
             technical_annulments: Optional list of technical annulment flags corresponding to responses
+            ins_dates: Optional list of submission timestamps (ins_date) corresponding to responses
             
         Raises:
             ExcelProcessingException: If export fails
@@ -82,12 +84,18 @@ class TransactionExcelExporter:
                     if technical_annulments and i < len(technical_annulments):
                         technical_annulment = technical_annulments[i]
                     
+                    # Get ins_date from list if provided
+                    ins_date = None
+                    if ins_dates and i < len(ins_dates):
+                        ins_date = ins_dates[i]
+                    
                     # Extract invoice data and status information
                     transaction_header_rows, transaction_line_rows, transaction_status_rows = self.mapper.transaction_response_to_rows(
                         transaction_response, 
                         transaction_id,
                         request_status,
-                        technical_annulment
+                        technical_annulment,
+                        ins_date
                     )
                     
                     header_rows.extend(transaction_header_rows)
@@ -293,7 +301,7 @@ class TransactionExcelExporter:
         # Create transaction status columns mapping
         status_columns = {
             'transaction_id': 'Tranzakció azonosító',
-            'timestamp': 'Időbélyeg',
+            'submission_timestamp': 'Beküldés időpontja',
             'invoice_number': 'Számla sorszáma',
             'invoice_status': 'Számla státusz',
             'operation_type': 'Művelet típusa',
@@ -432,7 +440,7 @@ class TransactionExcelExporter:
         """Convert TransactionStatusRow to dictionary."""
         return {
             'transaction_id': row.transaction_id,
-            'timestamp': row.timestamp,
+            'submission_timestamp': row.submission_timestamp,
             'invoice_number': row.invoice_number,
             'invoice_status': row.invoice_status,
             'operation_type': row.operation_type,

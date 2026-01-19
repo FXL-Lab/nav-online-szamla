@@ -1691,6 +1691,7 @@ class NavOnlineInvoiceClient:
         transaction_ids = []
         request_statuses = []
         technical_annulments = []
+        ins_dates = []
         
         if use_threading and len(transactions) > 1:
             logger.info(f"Processing {len(transactions)} transactions with threading (max_workers={max_workers})")
@@ -1727,6 +1728,7 @@ class NavOnlineInvoiceClient:
                     transaction_ids.append(transaction.transaction_id)
                     request_statuses.append(transaction.request_status.value if transaction.request_status else None)
                     technical_annulments.append(transaction.technical_annulment)
+                    ins_dates.append(transaction.ins_date)
         else:
             # Sequential processing
             logger.info(f"Processing {len(transactions)} transactions sequentially...")
@@ -1737,6 +1739,7 @@ class NavOnlineInvoiceClient:
                     transaction_ids.append(transaction.transaction_id)
                     request_statuses.append(transaction.request_status.value if transaction.request_status else None)
                     technical_annulments.append(transaction.technical_annulment)
+                    ins_dates.append(transaction.ins_date)
         
         logger.info(f"Successfully processed {len(status_responses)} transactions")
         
@@ -1744,6 +1747,7 @@ class NavOnlineInvoiceClient:
         self._last_processed_transaction_ids = transaction_ids
         self._last_processed_request_statuses = request_statuses
         self._last_processed_technical_annulments = technical_annulments
+        self._last_processed_ins_dates = ins_dates
         
         return status_responses
 
@@ -1796,6 +1800,7 @@ class NavOnlineInvoiceClient:
             all_transaction_ids = []
             all_request_statuses = []
             all_technical_annulments = []
+            all_ins_dates = []
             
             # Process each date range
             for i, (range_start_str, range_end_str) in enumerate(date_ranges):
@@ -1819,10 +1824,12 @@ class NavOnlineInvoiceClient:
                 range_transaction_ids = getattr(self, '_last_processed_transaction_ids', [])
                 range_request_statuses = getattr(self, '_last_processed_request_statuses', [])
                 range_technical_annulments = getattr(self, '_last_processed_technical_annulments', [])
+                range_ins_dates = getattr(self, '_last_processed_ins_dates', [])
                 
                 all_transaction_ids.extend(range_transaction_ids)
                 all_request_statuses.extend(range_request_statuses)
                 all_technical_annulments.extend(range_technical_annulments)
+                all_ins_dates.extend(range_ins_dates)
                 
                 logger.info(f"Found {len(range_responses)} transactions in range {i+1}")
             
@@ -1830,6 +1837,7 @@ class NavOnlineInvoiceClient:
             self._last_processed_transaction_ids = all_transaction_ids
             self._last_processed_request_statuses = all_request_statuses
             self._last_processed_technical_annulments = all_technical_annulments
+            self._last_processed_ins_dates = all_ins_dates
             
             if not all_status_responses:
                 logger.info("No transactions found in any of the date ranges")
@@ -3462,12 +3470,14 @@ class NavOnlineInvoiceClient:
             transaction_ids = getattr(self, '_last_processed_transaction_ids', None)
             request_statuses = getattr(self, '_last_processed_request_statuses', None)
             technical_annulments = getattr(self, '_last_processed_technical_annulments', None)
+            ins_dates = getattr(self, '_last_processed_ins_dates', None)
             exporter.export_to_excel(
                 transaction_responses, 
                 output_file, 
                 transaction_ids,
                 request_statuses,
-                technical_annulments
+                technical_annulments,
+                ins_dates
             )
             
             logger.info(f"✅ Successfully exported {len(transaction_responses)} transactions to {output_file}")
