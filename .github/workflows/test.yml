@@ -19,44 +19,41 @@ jobs:
       with:
         python-version: "3.13"
 
-    - name: Install Poetry
-      uses: snok/install-poetry@v1
+    - name: Install uv
+      uses: astral-sh/setup-uv@v5
       with:
-        version: latest
-        virtualenvs-create: true
-        virtualenvs-in-project: true
-        installer-parallel: true
+        version: "latest"
 
     - name: Load cached venv
-      id: cached-poetry-dependencies
+      id: cached-uv-dependencies
       uses: actions/cache@v3
       with:
         path: .venv
-        key: venv-${{ runner.os }}-3.13-${{ hashFiles('**/poetry.lock') }}
+        key: venv-${{ runner.os }}-3.13-${{ hashFiles('**/uv.lock') }}
 
     - name: Install dependencies
-      if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
-      run: poetry install --no-interaction --no-root --with test
-
-    - name: Install project
-      run: poetry install --no-interaction
+      run: uv sync
     
     - name: Run tests with pytest
       run: |
-        poetry run pytest tests/ -v --cov=nav_online_szamla --cov-report=xml --cov-report=term-missing
+        uv run pytest tests/ -v --cov=nav_online_szamla --cov-report=xml --cov-report=term-missing
     
     - name: Check code formatting with black
       run: |
-        poetry run black --check nav_online_szamla/ tests/
+        uv run black --check nav_online_szamla/ tests/
 
     - name: Lint with flake8
       run: |
-        poetry run flake8 nav_online_szamla/ tests/ --count --select=E9,F63,F7,F82 --show-source --statistics
-        poetry run flake8 nav_online_szamla/ tests/ --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+        uv run flake8 nav_online_szamla/ tests/ --count --select=E9,F63,F7,F82 --show-source --statistics
+        uv run flake8 nav_online_szamla/ tests/ --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
 
     - name: Type checking with mypy
       run: |
-        poetry run mypy nav_online_szamla/ --ignore-missing-imports || true
+        uv run mypy nav_online_szamla/ --ignore-missing-imports || true
+
+    - name: Run pip-audit for security vulnerabilities
+      run: |
+        uv run pip-audit
 
     - name: Upload coverage reports to Codecov
       uses: codecov/codecov-action@v3

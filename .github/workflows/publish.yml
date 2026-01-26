@@ -27,28 +27,23 @@ jobs:
       with:
         python-version: "3.13"
 
-    - name: Install Poetry
-      uses: snok/install-poetry@v1
+    - name: Install uv
+      uses: astral-sh/setup-uv@v5
       with:
-        version: latest
-        virtualenvs-create: true
-        virtualenvs-in-project: true
+        version: "latest"
 
     - name: Install dependencies
-      run: poetry install --no-interaction --no-root
-
-    - name: Install project
-      run: poetry install --no-interaction
+      run: uv sync
 
     - name: Check if version was bumped
       id: version-check
       run: |
         # Get current version from pyproject.toml
-        CURRENT_VERSION=$(poetry version -s)
+        CURRENT_VERSION=$(grep -m 1 'version = ' pyproject.toml | cut -d'"' -f2)
         echo "Current version: $CURRENT_VERSION"
         
         # Check if this version exists on PyPI
-        PACKAGE_NAME=$(poetry version | cut -d' ' -f1)
+        PACKAGE_NAME=$(grep -m 1 'name = ' pyproject.toml | cut -d'"' -f2)
         echo "Package name: $PACKAGE_NAME"
         
         # Try to get the version from PyPI (will fail if version doesn't exist)
@@ -66,19 +61,19 @@ jobs:
     - name: Run tests before publishing
       if: steps.version-check.outputs.should_publish == 'true'
       run: |
-        poetry run pytest tests/ -v
+        uv run pytest tests/ -v
 
     - name: Build package
       if: steps.version-check.outputs.should_publish == 'true'
       run: |
-        poetry build
+        uv build
 
     - name: Publish to PyPI
       if: steps.version-check.outputs.should_publish == 'true'
       env:
-        POETRY_PYPI_TOKEN_PYPI: ${{ secrets.PYPI_API_TOKEN }}
+        UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
       run: |
-        poetry publish
+        uv publish
 
     - name: Create GitHub Release
       if: steps.version-check.outputs.should_publish == 'true'

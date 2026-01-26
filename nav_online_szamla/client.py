@@ -2110,7 +2110,7 @@ class NavOnlineInvoiceClient:
         
         # Use provided timestamp or generate new one for consistency
         if header_timestamp is None:
-            header_timestamp = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.%fZ')[:-3] + 'Z'
+            header_timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%fZ')[:-3] + 'Z'
         
         # Create invoice operation list
         invoice_operation_list = []

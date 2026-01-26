@@ -1,17 +1,22 @@
 [build-system]
-requires = ["poetry-core>=1.0.0"]
-build-backend = "poetry.core.masonry.api"
+requires = ["uv_build>=0.9.26,<0.10.0"]
+build-backend = "uv_build"
 
-[tool.poetry]
+[project]
 name = "nav-online-szamla"
 version = "0.0.33"
 description = "NAV Online Számla"
-authors = ["Gergo Emmert <gergo.emmert@fxltech.com>"]
+authors = [{ name = "Gergo Emmert", email = "gergo.emmert@fxltech.com" }]
+requires-python = ">=3.9,<4.0"
 readme = "README.md"
-homepage = "https://github.com/FXL-Lab/nav-online-szamla"
-repository = "https://github.com/FXL-Lab/nav-online-szamla"
-documentation = "https://github.com/FXL-Lab/nav-online-szamla#readme"
-keywords = ["nav", "online", "szamla", "hungarian", "invoice", "tax"]
+keywords = [
+    "nav",
+    "online",
+    "szamla",
+    "hungarian",
+    "invoice",
+    "tax",
+]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -23,31 +28,45 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Topic :: Office/Business :: Financial :: Accounting",
+    "Programming Language :: Python :: 3.14",
 ]
-package-mode = true
-packages = [{include = "nav_online_szamla"}]
+dependencies = [
+    "requests>=2.31.0,<3",
+    "pysimplesoap>=1.16.0,<2",
+    "pandas>=2.1.0,<3",
+    "openpyxl>=3.1.0,<4",
+    "dotenv>=0.9.9,<0.10",
+    "tenacity>=9.0.0,<10",
+    "xsdata[cli]>=25.7,<26",
+    "cryptography>=44.0.1,<45",
+    "xlsxwriter>=3.2.9,<4",
+]
 
-[tool.poetry.dependencies]
-python = ">=3.9,<4.0"
-requests = "^2.31.0"
-pysimplesoap = "^1.16.0"
-pandas = "^2.1.0"
-openpyxl = "^3.1.0"
-dotenv = "^0.9.9"
-tenacity = "^9.0.0"
-xsdata = {extras = ["cli"], version = "^25.7"}
-cryptography = "^41.0.0"
-xlsxwriter = "^3.2.9"
+[project.urls]
+Homepage = "https://github.com/FXL-Lab/nav-online-szamla"
+Repository = "https://github.com/FXL-Lab/nav-online-szamla"
+Documentation = "https://github.com/FXL-Lab/nav-online-szamla#readme"
 
-[tool.poetry.group.test.dependencies]
-pytest = "^8.4.1"
-requests-mock = "^1.12.1"
-pytest-cov = "^6.0.0"
-pytest-mock = "^3.12.0"
-black = "^24.0.0"
-flake8 = "^7.0.0"
-mypy = "^1.8.0"
-types-requests = "^2.31.0"
+[dependency-groups]
+test = [
+    "pytest>=8.4.1,<9",
+    "requests-mock>=1.12.1,<2",
+    "pytest-cov>=6.0.0,<7",
+    "pytest-mock>=3.12.0,<4",
+    "black>=24.0.0,<25",
+    "flake8>=7.0.0,<8",
+    "mypy>=1.8.0,<2",
+    "types-requests>=2.31.0,<3",
+    "pip-audit>=2.0.0,<3",
+]
+
+[tool.uv]
+package = true
+default-groups = ["test"]
+
+[tool.uv.build-backend]
+module-name = ["nav_online_szamla"]
+module-root = ""
 
 [tool.black]
 line-length = 88
