@@ -8,7 +8,7 @@ import gzip
 import logging
 import time
 import concurrent.futures
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional, Tuple, Dict
 
@@ -2252,7 +2252,7 @@ class NavOnlineInvoiceClient:
         
         try:
             # Generate consistent timestamp for the entire operation
-            request_timestamp = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.%fZ')[:-3] + 'Z'
+            request_timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%fZ')[:-3] + 'Z'
             
             # Step 1: Get exchange token
             logger.info("Requesting exchange token for invoice submission")
@@ -2322,7 +2322,7 @@ class NavOnlineInvoiceClient:
         
         try:
             # Generate consistent timestamp for the entire operation
-            request_timestamp = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.%fZ')[:-3] + 'Z'
+            request_timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%fZ')[:-3] + 'Z'
             
             # Step 1: Get exchange token
             logger.info("Requesting exchange token for batch invoice submission")

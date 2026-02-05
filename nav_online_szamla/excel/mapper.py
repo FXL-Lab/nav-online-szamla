@@ -1094,21 +1094,73 @@ class ExcelFieldMapper:
         
         # Customer info - ALWAYS required for CREATE operations per NAV API
         # Create customer VAT data if we have tax info or VAT numbers
+        # IMPORTANT: CustomerVatDataType has XSD choice - only ONE of customerTaxNumber, communityVatNumber, or thirdStateTaxId can be set
         customer_vat_data = None
         if any([row.buyer_tax_number_main, row.buyer_community_vat_number, row.buyer_third_country_tax_number]):
-            customer_tax_number = None
-            if row.buyer_tax_number_main:
+            # Determine which type of tax identification to use (XSD allows only one)
+            # Priority logic:
+            # 1. If domestic tax number exists AND (no community VAT OR customer is in Hungary) -> use customerTaxNumber
+            # 2. Else if community VAT number exists AND customer is NOT in Hungary -> use communityVatNumber
+            # 3. Else if third state tax ID exists -> use thirdStateTaxId
+            # 4. Else use whatever is available
+            
+            buyer_country = (row.buyer_country_code or "").strip().upper()
+            is_domestic_customer = buyer_country == "HU" or buyer_country == ""
+            
+            # Clean up empty string values to None for proper validation
+            buyer_tax_main = row.buyer_tax_number_main if row.buyer_tax_number_main and str(row.buyer_tax_number_main).strip() else None
+            buyer_community_vat = row.buyer_community_vat_number if row.buyer_community_vat_number and str(row.buyer_community_vat_number).strip() else None
+            buyer_third_country_tax = row.buyer_third_country_tax_number if row.buyer_third_country_tax_number and str(row.buyer_third_country_tax_number).strip() else None
+            
+            if buyer_tax_main and is_domestic_customer:
+                # Domestic Hungarian customer - use customerTaxNumber only
                 customer_tax_number = CustomerTaxNumberType(
-                    taxpayer_id=cls._format_taxpayer_id(row.buyer_tax_number_main),
+                    taxpayer_id=cls._format_taxpayer_id(buyer_tax_main),
                     vat_code=cls._format_vat_code(row.buyer_tax_number_vat),
                     county_code=cls._format_county_code(row.buyer_tax_number_county)
                 )
-            
-            customer_vat_data = CustomerVatDataType(
-                customer_tax_number=customer_tax_number,
-                community_vat_number=row.buyer_community_vat_number,
-                third_state_tax_id=row.buyer_third_country_tax_number
-            )
+                customer_vat_data = CustomerVatDataType(
+                    customer_tax_number=customer_tax_number,
+                    community_vat_number=None,  # Must be None per XSD choice constraint
+                    third_state_tax_id=None
+                )
+                if buyer_community_vat:
+                    logger.warning(f"Ignoring community VAT number '{buyer_community_vat}' for domestic (HU) customer. Only domestic tax number will be used.")
+            elif buyer_community_vat and not is_domestic_customer:
+                # Foreign EU customer - use communityVatNumber only
+                customer_vat_data = CustomerVatDataType(
+                    customer_tax_number=None,  # Must be None per XSD choice constraint
+                    community_vat_number=buyer_community_vat,
+                    third_state_tax_id=None
+                )
+                if buyer_tax_main:
+                    logger.warning(f"Ignoring domestic tax number '{buyer_tax_main}' for foreign EU customer. Only community VAT number will be used.")
+            elif buyer_third_country_tax:
+                # Non-EU customer - use thirdStateTaxId only
+                customer_vat_data = CustomerVatDataType(
+                    customer_tax_number=None,  # Must be None per XSD choice constraint
+                    community_vat_number=None,
+                    third_state_tax_id=buyer_third_country_tax
+                )
+            elif buyer_tax_main:
+                # Fallback: has domestic tax number but unclear country - use customerTaxNumber
+                customer_tax_number = CustomerTaxNumberType(
+                    taxpayer_id=cls._format_taxpayer_id(buyer_tax_main),
+                    vat_code=cls._format_vat_code(row.buyer_tax_number_vat),
+                    county_code=cls._format_county_code(row.buyer_tax_number_county)
+                )
+                customer_vat_data = CustomerVatDataType(
+                    customer_tax_number=customer_tax_number,
+                    community_vat_number=None,
+                    third_state_tax_id=None
+                )
+            elif buyer_community_vat:
+                # Fallback: only has community VAT number
+                customer_vat_data = CustomerVatDataType(
+                    customer_tax_number=None,
+                    community_vat_number=buyer_community_vat,
+                    third_state_tax_id=None
+                )
 
         # Parse VAT status - determine appropriate status based on available data
         customer_vat_status = CustomerVatStatusType.PRIVATE_PERSON  # Default to PRIVATE_PERSON as most permissive

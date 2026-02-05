@@ -13,8 +13,7 @@ from nav_online_szamla.models import InvoiceData, ManageInvoiceOperationType
 from nav_online_szamla.models.invoice_data import (
     InvoiceMainType, InvoiceType, InvoiceHeadType, SupplierInfoType,
     CustomerInfoType, LinesType, LineType, SummaryType, InvoiceDetailType,
-    CustomerVatDataType, CustomerTaxNumberType, LineAmountsNormalType,
-    SummaryNormalType, SummaryGrossDataType
+    CustomerVatDataType, CustomerTaxNumberType, SummaryNormalType, SummaryGrossDataType
 )
 from nav_online_szamla.models.invoice_base import TaxNumberType, AddressType, SimpleAddressType
 
@@ -491,9 +490,250 @@ class TestExcelFieldMapper:
 
         # Reverse mapping: Excel rows -> InvoiceData
         reconstructed_invoice, operation_type = ExcelFieldMapper.header_row_to_invoice_data(header_row)
-        lines_type = ExcelFieldMapper.line_rows_to_invoice_lines(line_rows)
+        ExcelFieldMapper.line_rows_to_invoice_lines(line_rows)
 
         # Basic consistency checks
         assert reconstructed_invoice.invoice_number == sample_invoice_data.invoice_number
         assert reconstructed_invoice.invoice_issue_date == sample_invoice_data.invoice_issue_date
         assert operation_type == ManageInvoiceOperationType.CREATE
+
+
+class TestCustomerVatDataValidation:
+    """Test cases for CustomerVatData XSD choice constraint validation."""
+
+    def test_domestic_customer_uses_only_customer_tax_number(self):
+        """Test that domestic HU customers use only customerTaxNumber, not communityVatNumber."""
+        header_row = InvoiceHeaderRow(
+            invoice_number="TEST-001",
+            invoice_issue_date=date(2024, 1, 15),
+            buyer_tax_number_main="87654321",
+            buyer_tax_number_vat="2",
+            buyer_tax_number_county="02",
+            buyer_community_vat_number="HU87654321",  # Should be ignored
+            buyer_country_code="HU",
+            buyer_name="Domestic Customer",
+            buyer_vat_status="Belföldi ÁFA alany"
+        )
+
+        invoice_data, _ = ExcelFieldMapper.header_row_to_invoice_data(header_row)
+        customer_vat_data = invoice_data.invoice_main.invoice.invoice_head.customer_info.customer_vat_data
+
+        # Should have customerTaxNumber only
+        assert customer_vat_data.customer_tax_number is not None
+        assert customer_vat_data.customer_tax_number.taxpayer_id == "87654321"
+        # communityVatNumber and thirdStateTaxId should be None per XSD choice constraint
+        assert customer_vat_data.community_vat_number is None
+        assert customer_vat_data.third_state_tax_id is None
+
+    def test_foreign_eu_customer_uses_only_community_vat_number(self):
+        """Test that foreign EU customers use only communityVatNumber, not customerTaxNumber."""
+        header_row = InvoiceHeaderRow(
+            invoice_number="TEST-002",
+            invoice_issue_date=date(2024, 1, 15),
+            buyer_tax_number_main="12345678",  # Should be ignored
+            buyer_community_vat_number="DE123456789",
+            buyer_country_code="DE",  # Germany
+            buyer_name="German Customer GmbH",
+            buyer_vat_status="Egyéb (belföldi nem ÁFA alany, nem természetes személy, külföldi Áfa alany és külföldi nem ÁFA alany, nem természetes személy)"
+        )
+
+        invoice_data, _ = ExcelFieldMapper.header_row_to_invoice_data(header_row)
+        customer_vat_data = invoice_data.invoice_main.invoice.invoice_head.customer_info.customer_vat_data
+
+        # Should have communityVatNumber only
+        assert customer_vat_data.community_vat_number == "DE123456789"
+        # customerTaxNumber and thirdStateTaxId should be None per XSD choice constraint
+        assert customer_vat_data.customer_tax_number is None
+        assert customer_vat_data.third_state_tax_id is None
+
+    def test_third_country_customer_uses_only_third_state_tax_id(self):
+        """Test that non-EU customers use only thirdStateTaxId."""
+        header_row = InvoiceHeaderRow(
+            invoice_number="TEST-003",
+            invoice_issue_date=date(2024, 1, 15),
+            buyer_third_country_tax_number="US123456789",
+            buyer_country_code="US",  # USA - non-EU
+            buyer_name="American Company Inc.",
+            buyer_vat_status="Egyéb (belföldi nem ÁFA alany, nem természetes személy, külföldi Áfa alany és külföldi nem ÁFA alany, nem természetes személy)"
+        )
+
+        invoice_data, _ = ExcelFieldMapper.header_row_to_invoice_data(header_row)
+        customer_vat_data = invoice_data.invoice_main.invoice.invoice_head.customer_info.customer_vat_data
+
+        # Should have thirdStateTaxId only
+        assert customer_vat_data.third_state_tax_id == "US123456789"
+        # customerTaxNumber and communityVatNumber should be None per XSD choice constraint
+        assert customer_vat_data.customer_tax_number is None
+        assert customer_vat_data.community_vat_number is None
+
+    def test_domestic_customer_with_both_tax_numbers_prioritizes_customer_tax_number(self):
+        """Test that when both tax numbers exist for HU customer, customerTaxNumber takes priority."""
+        header_row = InvoiceHeaderRow(
+            invoice_number="TEST-004",
+            invoice_issue_date=date(2024, 1, 15),
+            buyer_tax_number_main="87654321",
+            buyer_tax_number_vat="2",
+            buyer_tax_number_county="02",
+            buyer_community_vat_number="HU87654321",  # Conflicting data
+            buyer_country_code="HU",
+            buyer_name="Domestic Customer"
+        )
+
+        invoice_data, _ = ExcelFieldMapper.header_row_to_invoice_data(header_row)
+        customer_vat_data = invoice_data.invoice_main.invoice.invoice_head.customer_info.customer_vat_data
+
+        # Domestic tax number should take priority
+        assert customer_vat_data.customer_tax_number is not None
+        assert customer_vat_data.customer_tax_number.taxpayer_id == "87654321"
+        assert customer_vat_data.community_vat_number is None
+
+    def test_empty_country_code_treated_as_domestic(self):
+        """Test that empty/missing country code defaults to domestic (HU) treatment."""
+        header_row = InvoiceHeaderRow(
+            invoice_number="TEST-005",
+            invoice_issue_date=date(2024, 1, 15),
+            buyer_tax_number_main="87654321",
+            buyer_tax_number_vat="2",
+            buyer_tax_number_county="02",
+            buyer_community_vat_number="HU87654321",  # Should be ignored
+            buyer_country_code="",  # Empty country code
+            buyer_name="Customer with no country"
+        )
+
+        invoice_data, _ = ExcelFieldMapper.header_row_to_invoice_data(header_row)
+        customer_vat_data = invoice_data.invoice_main.invoice.invoice_head.customer_info.customer_vat_data
+
+        # Should default to domestic behavior - use customerTaxNumber only
+        assert customer_vat_data.customer_tax_number is not None
+        assert customer_vat_data.community_vat_number is None
+
+    def test_only_community_vat_number_provided(self):
+        """Test when only communityVatNumber is provided (no domestic tax number)."""
+        header_row = InvoiceHeaderRow(
+            invoice_number="TEST-006",
+            invoice_issue_date=date(2024, 1, 15),
+            buyer_community_vat_number="AT123456789",
+            buyer_country_code="AT",  # Austria
+            buyer_name="Austrian Customer"
+        )
+
+        invoice_data, _ = ExcelFieldMapper.header_row_to_invoice_data(header_row)
+        customer_vat_data = invoice_data.invoice_main.invoice.invoice_head.customer_info.customer_vat_data
+
+        # Should use communityVatNumber
+        assert customer_vat_data.community_vat_number == "AT123456789"
+        assert customer_vat_data.customer_tax_number is None
+        assert customer_vat_data.third_state_tax_id is None
+
+    def test_only_domestic_tax_number_provided(self):
+        """Test when only domestic tax number is provided."""
+        header_row = InvoiceHeaderRow(
+            invoice_number="TEST-007",
+            invoice_issue_date=date(2024, 1, 15),
+            buyer_tax_number_main="87654321",
+            buyer_tax_number_vat="2",
+            buyer_tax_number_county="02",
+            buyer_country_code="HU",
+            buyer_name="Simple Domestic Customer"
+        )
+
+        invoice_data, _ = ExcelFieldMapper.header_row_to_invoice_data(header_row)
+        customer_vat_data = invoice_data.invoice_main.invoice.invoice_head.customer_info.customer_vat_data
+
+        # Should use customerTaxNumber
+        assert customer_vat_data.customer_tax_number is not None
+        assert customer_vat_data.customer_tax_number.taxpayer_id == "87654321"
+        assert customer_vat_data.community_vat_number is None
+        assert customer_vat_data.third_state_tax_id is None
+
+    def test_empty_string_values_treated_as_none(self):
+        """Test that empty string values are properly treated as None."""
+        header_row = InvoiceHeaderRow(
+            invoice_number="TEST-008",
+            invoice_issue_date=date(2024, 1, 15),
+            buyer_tax_number_main="87654321",
+            buyer_community_vat_number="",  # Empty string - should be treated as None
+            buyer_third_country_tax_number="  ",  # Whitespace - should be treated as None
+            buyer_country_code="HU",
+            buyer_name="Domestic Customer"
+        )
+
+        invoice_data, _ = ExcelFieldMapper.header_row_to_invoice_data(header_row)
+        customer_vat_data = invoice_data.invoice_main.invoice.invoice_head.customer_info.customer_vat_data
+
+        # Should use customerTaxNumber, empty strings should be ignored
+        assert customer_vat_data.customer_tax_number is not None
+        assert customer_vat_data.community_vat_number is None
+        assert customer_vat_data.third_state_tax_id is None
+
+    def test_case_insensitive_country_code_matching(self):
+        """Test that country code matching is case-insensitive."""
+        header_row = InvoiceHeaderRow(
+            invoice_number="TEST-009",
+            invoice_issue_date=date(2024, 1, 15),
+            buyer_tax_number_main="87654321",
+            buyer_community_vat_number="HU87654321",
+            buyer_country_code="hu",  # Lowercase
+            buyer_name="Domestic Customer"
+        )
+
+        invoice_data, _ = ExcelFieldMapper.header_row_to_invoice_data(header_row)
+        customer_vat_data = invoice_data.invoice_main.invoice.invoice_head.customer_info.customer_vat_data
+
+        # Should still be treated as domestic (HU)
+        assert customer_vat_data.customer_tax_number is not None
+        assert customer_vat_data.community_vat_number is None
+
+    def test_fallback_when_unclear_with_domestic_tax_number(self):
+        """Test fallback behavior when country is unclear but domestic tax number exists."""
+        header_row = InvoiceHeaderRow(
+            invoice_number="TEST-010",
+            invoice_issue_date=date(2024, 1, 15),
+            buyer_tax_number_main="87654321",
+            buyer_tax_number_vat="2",
+            buyer_tax_number_county="02",
+            buyer_country_code=None,  # No country specified
+            buyer_name="Customer with unclear country"
+        )
+
+        invoice_data, _ = ExcelFieldMapper.header_row_to_invoice_data(header_row)
+        customer_vat_data = invoice_data.invoice_main.invoice.invoice_head.customer_info.customer_vat_data
+
+        # Should fallback to using customerTaxNumber
+        assert customer_vat_data.customer_tax_number is not None
+        assert customer_vat_data.customer_tax_number.taxpayer_id == "87654321"
+        assert customer_vat_data.community_vat_number is None
+
+    def test_foreign_customer_with_both_numbers_prioritizes_community_vat(self):
+        """Test that foreign EU customer with both numbers uses communityVatNumber."""
+        header_row = InvoiceHeaderRow(
+            invoice_number="TEST-011",
+            invoice_issue_date=date(2024, 1, 15),
+            buyer_tax_number_main="12345678",  # Should be ignored for foreign customer
+            buyer_community_vat_number="DE123456789",
+            buyer_country_code="DE",  # Germany
+            buyer_name="German Customer"
+        )
+
+        invoice_data, _ = ExcelFieldMapper.header_row_to_invoice_data(header_row)
+        customer_vat_data = invoice_data.invoice_main.invoice.invoice_head.customer_info.customer_vat_data
+
+        # Community VAT should take priority for foreign customer
+        assert customer_vat_data.community_vat_number == "DE123456789"
+        assert customer_vat_data.customer_tax_number is None
+        assert customer_vat_data.third_state_tax_id is None
+
+    def test_no_vat_data_provided(self):
+        """Test behavior when no VAT data is provided at all."""
+        header_row = InvoiceHeaderRow(
+            invoice_number="TEST-012",
+            invoice_issue_date=date(2024, 1, 15),
+            buyer_name="Customer without VAT data",
+            buyer_country_code="HU"
+        )
+
+        invoice_data, _ = ExcelFieldMapper.header_row_to_invoice_data(header_row)
+        customer_vat_data = invoice_data.invoice_main.invoice.invoice_head.customer_info.customer_vat_data
+
+        # Should be None when no tax data provided
+        assert customer_vat_data is None

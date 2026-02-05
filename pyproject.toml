@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "nav-online-szamla"
-version = "0.0.34"
+version = "0.0.35"
 description = "NAV Online Számla"
 authors = [{ name = "Gergo Emmert", email = "gergo.emmert@fxltech.com" }]
 requires-python = ">=3.9,<4.0"
