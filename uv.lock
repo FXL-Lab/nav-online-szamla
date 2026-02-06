@@ -1192,7 +1192,7 @@ wheels = [
 
 [[package]]
 name = "nav-online-szamla"
-version = "0.0.33"
+version = "0.0.36"
 source = { editable = "." }
 dependencies = [
     { name = "cryptography" },

@@ -58,10 +58,31 @@ jobs:
         echo "version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
         echo "package_name=$PACKAGE_NAME" >> $GITHUB_OUTPUT
 
-    - name: Run tests before publishing
+    - name: Run tests with coverage
       if: steps.version-check.outputs.should_publish == 'true'
       run: |
-        uv run pytest tests/ -v
+        uv run pytest tests/ -v --cov=. --cov-report=xml --cov-report=html --junitxml=test-results.xml
+
+    - name: SonarQube Scan
+      if: steps.version-check.outputs.should_publish == 'true'
+      uses: SonarSource/sonarqube-scan-action@v2
+      env:
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+      with:
+        args: >
+          -Dsonar.projectKey=nav-online-szamla
+          -Dsonar.python.coverage.reportPaths=coverage.xml
+          -Dsonar.python.xunit.reportPath=test-results.xml
+    
+    - name: SonarQube Quality Gate check
+      if: steps.version-check.outputs.should_publish == 'true'
+      continue-on-error: true
+      uses: SonarSource/sonarqube-quality-gate-action@v1
+      timeout-minutes: 5
+      env:
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
 
     - name: Build package
       if: steps.version-check.outputs.should_publish == 'true'
