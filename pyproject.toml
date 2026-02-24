@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "nav-online-szamla"
-version = "0.0.36"
+version = "0.0.37"
 description = "NAV Online Számla"
 authors = [{ name = "Gergo Emmert", email = "gergo.emmert@fxltech.com" }]
 requires-python = ">=3.9,<4.0"
@@ -38,7 +38,7 @@ dependencies = [
     "dotenv>=0.9.9,<0.10",
     "tenacity>=9.0.0,<10",
     "xsdata[cli]>=25.7,<26",
-    "cryptography>=44.0.1,<45",
+    "cryptography>=46.0.5",
     "xlsxwriter>=3.2.9,<4",
 ]
 
